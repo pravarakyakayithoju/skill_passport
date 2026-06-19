@@ -21,30 +21,43 @@ export async function askGPTJson<T>(prompt: string, fallbackData: T): Promise<T>
     return fallbackData;
   }
 
-  try {
-    const response = await openai.chat.completions.create({
-      model: CHAT_MODEL,
-      messages: [
-        {
-          role: 'system',
-          content: 'You are an expert technical evaluator. You must return only a valid JSON object matching the requested schema. Do not enclose the output in ```json or markdown blocks.',
-        },
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
-      response_format: { type: 'json_object' },
-    });
-
-    const content = response.choices[0]?.message?.content;
-    if (!content) {
-      throw new Error('Empty response from model');
-    }
-
-    return JSON.parse(content) as T;
-  } catch (error) {
-    console.error('Error in askGPTJson:', error);
-    return fallbackData;
+  const models = [CHAT_MODEL];
+  if (isGroq && CHAT_MODEL !== 'llama-3.1-8b-instant') {
+    models.push('llama-3.1-8b-instant');
   }
+
+  for (let i = 0; i < models.length; i++) {
+    const model = models[i];
+    try {
+      console.log(`Calling LLM model "${model}" (attempt ${i + 1}/${models.length})...`);
+      const response = await openai.chat.completions.create({
+        model: model,
+        messages: [
+          {
+            role: 'system',
+            content: 'You are an expert technical evaluator. You must return only a valid JSON object matching the requested schema. Do not enclose the output in ```json or markdown blocks.',
+          },
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+        response_format: { type: 'json_object' },
+      });
+
+      const content = response.choices[0]?.message?.content;
+      if (!content) {
+        throw new Error('Empty response from model');
+      }
+
+      return JSON.parse(content) as T;
+    } catch (error: any) {
+      console.error(`Error in askGPTJson with model "${model}":`, error.message || error);
+      if (i < models.length - 1) {
+        console.warn(`Attempting fallback to next model...`);
+      }
+    }
+  }
+
+  return fallbackData;
 }

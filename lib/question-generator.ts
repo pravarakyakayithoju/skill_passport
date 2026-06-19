@@ -24,6 +24,95 @@ interface RawMCQPool {
   }>;
 }
 
+function extractStarterCode(referenceSolution: string, language: string): string {
+  if (!referenceSolution) {
+    return language === 'python'
+      ? `def solution():\n    # Write your code here\n    pass`
+      : `function solution() {\n  // Write your code here\n}`;
+  }
+
+  if (language === 'python') {
+    const match = referenceSolution.match(/def\s+\w+\s*\(.*?\)\s*:/);
+    if (match) {
+      return `${match[0]}\n    # Write your code here\n    pass`;
+    }
+    return `def solution():\n    # Write your code here\n    pass`;
+  } else {
+    const match = referenceSolution.match(/function\s+\w+\s*\(.*?\)/);
+    if (match) {
+      return `${match[0]} {\n  // Write your code here\n}`;
+    }
+    const arrowMatch = referenceSolution.match(/(?:const|let|var)\s+(\w+)\s*=\s*(?:\(.*?\)|[^=]+?)\s*=>/);
+    if (arrowMatch) {
+      return `${arrowMatch[0]} {\n  // Write your code here\n}`;
+    }
+    return `function solution() {\n  // Write your code here\n}`;
+  }
+}
+
+function sanitizeRawQuestion(q: any): RawCodingQuestion {
+  if (!q) {
+    throw new Error('Raw question response is empty.');
+  }
+
+  const language = q.language === 'python' ? 'python' : 'javascript';
+  const title = q.title || 'Coding Challenge';
+  const description = q.description || 'Solve the coding challenge.';
+  const reference_solution = q.reference_solution || '';
+  
+  let starter_code = q.starter_code;
+  if (!starter_code || typeof starter_code !== 'string') {
+    starter_code = extractStarterCode(reference_solution, language);
+  }
+
+  const visible_tests = Array.isArray(q.visible_tests) 
+    ? q.visible_tests.map((t: any) => ({
+        input: typeof t.input === 'string' ? t.input : JSON.stringify(t.input),
+        expected: typeof t.expected === 'string' ? t.expected : JSON.stringify(t.expected),
+      }))
+    : [];
+
+  const hidden_tests = Array.isArray(q.hidden_tests)
+    ? q.hidden_tests.map((t: any) => ({
+        input: typeof t.input === 'string' ? t.input : JSON.stringify(t.input),
+        expected: typeof t.expected === 'string' ? t.expected : JSON.stringify(t.expected),
+      }))
+    : [];
+
+  return {
+    language,
+    title,
+    description,
+    starter_code,
+    visible_tests,
+    hidden_tests,
+    reference_solution,
+  };
+}
+
+function sanitizeRawMCQs(mcqPool: any, primarySkill: string): RawMCQPool {
+  if (!mcqPool || !Array.isArray(mcqPool.questions)) {
+    return { questions: [] };
+  }
+  const cleanQuestions = mcqPool.questions.map((q: any) => {
+    const options = q.options || {};
+    return {
+      skill: q.skill || primarySkill,
+      difficulty: typeof q.difficulty === 'number' ? q.difficulty : 3,
+      question: q.question || 'Multiple choice question',
+      options: {
+        A: options.A || 'Option A',
+        B: options.B || 'Option B',
+        C: options.C || 'Option C',
+        D: options.D || 'Option D',
+      },
+      correct: (['A', 'B', 'C', 'D'].includes(q.correct) ? q.correct : 'A') as 'A' | 'B' | 'C' | 'D',
+      explanation: q.explanation || '',
+    };
+  });
+  return { questions: cleanQuestions };
+}
+
 /**
  * Generate coding question and MCQ pool, validate tests via Judge0, and write to DB.
  */
@@ -96,7 +185,7 @@ Output format MUST be JSON matching the following schema:
   "language": "javascript" | "python",
   "title": "string",
   "description": "string (highly detailed markdown description)",
-  "starter_code": "string (empty function boilerplate/stub containing only the function signature, JSDoc/type comments, and an empty body or return/pass. It MUST NOT contain any solution logic or implementation)",
+  "starter_code": "string (empty starter code boilerplate/stub, including function signature, type comments, and empty body or pass)",
   "visible_tests": [{"input": "string (JSON array of args)", "expected": "string (JSON expected result)"}],
   "hidden_tests": [{"input": "string (JSON array of args)", "expected": "string (JSON expected result)"}],
   "reference_solution": "string (complete, working implementation of the function)"
@@ -104,25 +193,33 @@ Output format MUST be JSON matching the following schema:
 Generate exactly 2 visible_tests (examples) and exactly 6 hidden_tests.
 Only support "javascript" or "python" for language.`;
 
-    const rawQuestion = await askGPTJson<RawCodingQuestion | null>(codingPrompt, null);
+    const rawQuestion = await askGPTJson<any>(codingPrompt, null);
     if (!rawQuestion) continue;
 
+    let sanitizedQuestion: RawCodingQuestion;
+    try {
+      sanitizedQuestion = sanitizeRawQuestion(rawQuestion);
+    } catch (e) {
+      console.error('Failed to sanitize raw coding question:', e);
+      continue;
+    }
+
     // Step 2: Validate the generated tests using the reference solution in Judge0 (or mock it if MOCK_JUDGE0 is active)
-    const validatedVisible: typeof rawQuestion.visible_tests = [];
-    const validatedHidden: typeof rawQuestion.hidden_tests = [];
+    const validatedVisible: typeof sanitizedQuestion.visible_tests = [];
+    const validatedHidden: typeof sanitizedQuestion.hidden_tests = [];
 
     const bypassValidation = MOCK_JUDGE0;
 
     // Run visible tests
-    for (const test of rawQuestion.visible_tests) {
+    for (const test of sanitizedQuestion.visible_tests) {
       const res = bypassValidation 
         ? { passed: true, actual: test.expected }
         : await executeCodeInJudge0(
-            rawQuestion.reference_solution,
-            rawQuestion.language,
+            sanitizedQuestion.reference_solution,
+            sanitizedQuestion.language,
             test.input,
             test.expected,
-            rawQuestion.starter_code
+            sanitizedQuestion.starter_code
           );
       if (res.passed) {
         validatedVisible.push(test);
@@ -130,15 +227,15 @@ Only support "javascript" or "python" for language.`;
     }
 
     // Run hidden tests
-    for (const test of rawQuestion.hidden_tests) {
+    for (const test of sanitizedQuestion.hidden_tests) {
       const res = bypassValidation
         ? { passed: true, actual: test.expected }
         : await executeCodeInJudge0(
-            rawQuestion.reference_solution,
-            rawQuestion.language,
+            sanitizedQuestion.reference_solution,
+            sanitizedQuestion.language,
             test.input,
             test.expected,
-            rawQuestion.starter_code
+            sanitizedQuestion.starter_code
           );
       if (res.passed) {
         validatedHidden.push(test);
@@ -148,7 +245,7 @@ Only support "javascript" or "python" for language.`;
     // Check if at least 4 hidden tests passed or if sandbox execution is bypassed
     if (bypassValidation || (validatedHidden.length >= 4 && validatedVisible.length > 0)) {
       generatedQuestion = {
-        ...rawQuestion,
+        ...sanitizedQuestion,
         visible_tests: validatedVisible,
         hidden_tests: validatedHidden,
       };
@@ -205,12 +302,24 @@ Output format MUST be JSON matching the following schema:
 }
 Make sure options are logical, single choice is strictly correct, and difficulty distribution is exactly 2 questions per level.`;
 
-  const rawMCQs = await askGPTJson<RawMCQPool | null>(mcqPrompt, null);
-  if (!rawMCQs || !rawMCQs.questions || rawMCQs.questions.length === 0) {
-    throw new Error('Failed to generate MCQ pool.');
+  const rawMCQs = await askGPTJson<any>(mcqPrompt, null);
+  let sanitizedMCQs = sanitizeRawMCQs(rawMCQs, primarySkill);
+  
+  if (sanitizedMCQs.questions.length === 0) {
+    console.warn('Failed to generate MCQs dynamically, falling back to mock MCQs pool.');
+    // Populate with mock MCQs but mapped to the current assessmentId and primarySkill
+    const fallbackMCQs = MOCK_MCQ_POOL.map(q => ({
+      skill: primarySkill,
+      difficulty: q.difficulty,
+      question: q.question.replace(/JavaScript/gi, primarySkill).replace(/JS/gi, primarySkill),
+      options: q.options,
+      correct: q.correct as 'A' | 'B' | 'C' | 'D',
+      explanation: q.explanation,
+    }));
+    sanitizedMCQs = { questions: fallbackMCQs };
   }
 
-  const mcqRows = rawMCQs.questions.map((q, idx) => ({
+  const mcqRows = sanitizedMCQs.questions.map((q, idx) => ({
     id: crypto.randomUUID(),
     assessment_id: assessmentId,
     skill: q.skill || primarySkill,
