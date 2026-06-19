@@ -111,7 +111,7 @@ Only support "javascript" or "python" for language.`;
     const validatedVisible: typeof rawQuestion.visible_tests = [];
     const validatedHidden: typeof rawQuestion.hidden_tests = [];
 
-    const bypassValidation = MOCK_JUDGE0 && !isLLMSandboxActive();
+    const bypassValidation = MOCK_JUDGE0;
 
     // Run visible tests
     for (const test of rawQuestion.visible_tests) {
