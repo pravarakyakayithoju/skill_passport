@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { Video, VideoOff, Square, Radio, Loader2, RefreshCw, UploadCloud, AlertCircle } from 'lucide-react';
+import { Mic, MicOff, Square, Radio, Loader2, RefreshCw, UploadCloud, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface VideoRecorderProps {
@@ -21,41 +21,36 @@ export default function VideoRecorder({ assessmentId, onUploadComplete }: VideoR
   const [status, setStatus] = useState<'idle' | 'recording' | 'processing' | 'uploading' | 'completed' | 'failed'>('idle');
   const [uploadProgress, setUploadProgress] = useState(0);
   
-  const videoPreviewRef = useRef<HTMLVideoElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Request permissions on component mount
+  // Request permissions on mount
   useEffect(() => {
-    requestCameraAccess();
+    requestMicAccess();
     return () => {
-      stopCameraStream();
+      stopMicStream();
       if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
     };
   }, []);
 
-  const requestCameraAccess = async () => {
+  const requestMicAccess = async () => {
     try {
-      stopCameraStream();
+      stopMicStream();
       const userStream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 640, height: 480, facingMode: 'user' },
-        audio: true
+        audio: true,
+        video: false
       });
       
       setStream(userStream);
       setPermissionStatus('granted');
-      
-      if (videoPreviewRef.current) {
-        videoPreviewRef.current.srcObject = userStream;
-      }
     } catch (err) {
-      console.error('Camera/Mic permission error:', err);
+      console.error('Microphone permission error:', err);
       setPermissionStatus('denied');
-      toast.error('Could not access camera or microphone. Check permission settings.');
+      toast.error('Could not access your microphone. Check your permission settings.');
     }
   };
 
-  const stopCameraStream = () => {
+  const stopMicStream = () => {
     if (stream) {
       stream.getTracks().forEach((track) => track.stop());
       setStream(null);
@@ -64,7 +59,7 @@ export default function VideoRecorder({ assessmentId, onUploadComplete }: VideoR
 
   const startRecording = () => {
     if (!stream) {
-      toast.error('No camera preview available to record.');
+      toast.error('No microphone stream available.');
       return;
     }
 
@@ -74,13 +69,10 @@ export default function VideoRecorder({ assessmentId, onUploadComplete }: VideoR
     setIsRecording(true);
 
     try {
-      // Determine supported mimeTypes for recording
-      let options = { mimeType: 'video/webm;codecs=vp9,opus' };
+      // Determine supported mimeTypes for audio recording
+      let options = { mimeType: 'audio/webm;codecs=opus' };
       if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-        options = { mimeType: 'video/webm;codecs=vp8,opus' };
-        if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-          options = { mimeType: 'video/webm' };
-        }
+        options = { mimeType: 'audio/webm' };
       }
 
       const recorder = new MediaRecorder(stream, options);
@@ -101,7 +93,7 @@ export default function VideoRecorder({ assessmentId, onUploadComplete }: VideoR
       // Start recording timer
       timerIntervalRef.current = setInterval(() => {
         setRecordingSeconds((prev) => {
-          if (prev >= 89) { // 90s hard limit
+          if (prev >= 89) { // 90s limit
             stopRecording();
             return 90;
           }
@@ -111,7 +103,7 @@ export default function VideoRecorder({ assessmentId, onUploadComplete }: VideoR
 
     } catch (err) {
       console.error('Error starting MediaRecorder:', err);
-      toast.error('Failed to start video recording.');
+      toast.error('Failed to start audio recording.');
       setIsRecording(false);
       setStatus('idle');
     }
@@ -131,16 +123,16 @@ export default function VideoRecorder({ assessmentId, onUploadComplete }: VideoR
   // Upload trigger when recorded chunks are set
   useEffect(() => {
     if (status === 'processing' && recordedChunks.length > 0) {
-      uploadVideoBlob();
+      uploadAudioBlob();
     }
   }, [recordedChunks, status]);
 
-  const uploadVideoBlob = async () => {
+  const uploadAudioBlob = async () => {
     setStatus('uploading');
     setUploadProgress(10);
 
-    const blob = new Blob(recordedChunks, { type: 'video/webm' });
-    const file = new File([blob], 'explanation.webm', { type: 'video/webm' });
+    const blob = new Blob(recordedChunks, { type: 'audio/webm' });
+    const file = new File([blob], 'explanation.webm', { type: 'audio/webm' });
 
     const formData = new FormData();
     formData.append('file', file);
@@ -154,32 +146,28 @@ export default function VideoRecorder({ assessmentId, onUploadComplete }: VideoR
         body: formData,
       });
 
-      if (!res.ok) throw new Error('Video upload failed');
+      if (!res.ok) throw new Error('Audio upload failed');
 
       setUploadProgress(100);
       setStatus('completed');
-      toast.success('Explanation video processed successfully!');
+      toast.success('Explanation audio processed successfully!');
       
-      // Stop webcam stream tracks
-      stopCameraStream();
-      
+      stopMicStream();
       onUploadComplete();
     } catch (err) {
       console.error(err);
       setStatus('failed');
-      toast.error('Failed to upload video to servers.');
+      toast.error('Failed to upload audio to servers.');
     }
   };
 
-  const handleSimulateMockVideo = async () => {
+  const handleSimulateMockAudio = async () => {
     setStatus('uploading');
     setUploadProgress(50);
     
-    // Artificial wait
     await new Promise((resolve) => setTimeout(resolve, 1500));
 
     try {
-      // Call mock-friendly submit-video with empty data or indicator
       const formData = new FormData();
       formData.append('assessmentId', assessmentId);
       formData.append('is_mock', 'true');
@@ -189,13 +177,13 @@ export default function VideoRecorder({ assessmentId, onUploadComplete }: VideoR
         body: formData,
       });
 
-      if (!res.ok) throw new Error('Mock video submission failed');
+      if (!res.ok) throw new Error('Mock audio submission failed');
 
       setUploadProgress(100);
       setStatus('completed');
       toast.success('Simulated explanation processed!');
       
-      stopCameraStream();
+      stopMicStream();
       onUploadComplete();
     } catch (err) {
       console.error(err);
@@ -205,39 +193,52 @@ export default function VideoRecorder({ assessmentId, onUploadComplete }: VideoR
 
   return (
     <Card className="w-full max-w-xl mx-auto bg-slate-900/60 border-slate-800 backdrop-blur-xl rounded-2xl overflow-hidden shadow-2xl relative">
-      <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 via-transparent to-transparent pointer-events-none" />
+      <div className="absolute inset-0 bg-gradient-to-br from-teal-500/5 via-transparent to-transparent pointer-events-none" />
       <CardContent className="p-8">
         <div className="space-y-6">
           
-          {/* Camera View Area */}
-          <div className="relative aspect-video rounded-xl bg-slate-950 border border-slate-850 overflow-hidden shadow-inner flex items-center justify-center">
+          {/* Audio Visualization / State Area */}
+          <div className="relative aspect-video rounded-xl bg-slate-950 border border-slate-850 overflow-hidden shadow-inner flex flex-col items-center justify-center">
+            
             {permissionStatus === 'granted' && status !== 'uploading' && status !== 'completed' && (
-              <video
-                ref={videoPreviewRef}
-                autoPlay
-                playsInline
-                muted
-                className="w-full h-full object-cover transform -scale-x-100"
-              />
+              <div className="text-center space-y-4">
+                <div className={`p-6 rounded-full border transition-all duration-500 mx-auto w-fit ${
+                  isRecording 
+                    ? 'bg-red-500/10 border-red-500/30 text-red-500 shadow-[0_0_35px_rgba(239,68,68,0.25)] animate-pulse' 
+                    : 'bg-slate-900 border-slate-800 text-teal-400'
+                }`}>
+                  <Mic className="h-10 w-10" />
+                </div>
+                <div className="space-y-1">
+                  <p className="font-semibold text-slate-200">
+                    {isRecording ? 'Recording Voice Explanation...' : 'Microphone Ready'}
+                  </p>
+                  <p className="text-xs text-slate-400 max-w-xs mx-auto leading-normal">
+                    {isRecording 
+                      ? 'Speak clearly into your microphone to explain your solution logic and complexities.' 
+                      : 'Click the red button below to start your oral explanation.'}
+                  </p>
+                </div>
+              </div>
             )}
 
-            {/* Inactive or Permission State overlays */}
+            {/* Loading / Permissions Overlay */}
             {permissionStatus === 'prompt' && (
               <div className="text-center p-6 space-y-4">
                 <Loader2 className="h-8 w-8 text-teal-400 animate-spin mx-auto" />
-                <p className="text-sm text-slate-400">Requesting hardware camera permission...</p>
+                <p className="text-sm text-slate-400">Requesting microphone access...</p>
               </div>
             )}
 
             {permissionStatus === 'denied' && (
               <div className="text-center p-6 space-y-4">
-                <VideoOff className="h-8 w-8 text-red-400 mx-auto" />
-                <p className="text-sm text-slate-300">Camera / Microphone Blocked</p>
-                <p className="text-xs text-slate-500 max-w-xs mx-auto">
-                  Please enable camera permission in your browser settings to proceed, or click below to simulate.
+                <MicOff className="h-8 w-8 text-red-400 mx-auto" />
+                <p className="text-sm text-slate-300">Microphone Access Blocked</p>
+                <p className="text-xs text-slate-500 max-w-xs mx-auto leading-normal">
+                  Please enable microphone permission in your browser settings to proceed, or click below to bypass and simulate.
                 </p>
-                <Button variant="outline" size="sm" onClick={requestCameraAccess} className="border-slate-800 text-slate-300">
-                  <RefreshCw className="h-3.5 w-3.5 mr-1.5" /> Re-check Devices
+                <Button variant="outline" size="sm" onClick={requestMicAccess} className="border-slate-800 text-slate-300">
+                  <RefreshCw className="h-3.5 w-3.5 mr-1.5" /> Re-check Microphone
                 </Button>
               </div>
             )}
@@ -246,8 +247,8 @@ export default function VideoRecorder({ assessmentId, onUploadComplete }: VideoR
               <div className="text-center p-6 space-y-4">
                 <UploadCloud className="h-10 w-10 text-teal-400 animate-bounce mx-auto" />
                 <div className="space-y-1.5 max-w-xs mx-auto">
-                  <p className="font-semibold text-slate-200">Saving & Transcribing...</p>
-                  <p className="text-xs text-slate-500">Processing video through OpenAI Whisper-1</p>
+                  <p className="font-semibold text-slate-200">Processing Audio...</p>
+                  <p className="text-xs text-slate-500">Transcribing voice explanation via OpenAI Whisper</p>
                 </div>
                 <Progress value={uploadProgress} className="h-1.5 bg-slate-900 max-w-[200px] mx-auto" indicatorClassName="bg-teal-500" />
               </div>
@@ -263,14 +264,14 @@ export default function VideoRecorder({ assessmentId, onUploadComplete }: VideoR
             )}
           </div>
 
-          {/* Recording limits bar */}
+          {/* Recording limits progress bar */}
           {isRecording && (
             <div className="space-y-1">
               <Progress value={(recordingSeconds / 90) * 100} className="h-1 bg-slate-900" indicatorClassName="bg-red-500" />
             </div>
           )}
 
-          {/* User Controls */}
+          {/* Controls */}
           <div className="flex flex-col gap-3">
             {permissionStatus === 'granted' && (
               <div className="grid grid-cols-1 gap-3">
@@ -280,7 +281,7 @@ export default function VideoRecorder({ assessmentId, onUploadComplete }: VideoR
                     className="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-400 hover:to-red-500 text-white font-bold py-6 text-base rounded-xl transition-all duration-300 flex items-center justify-center space-x-2 shadow-lg shadow-red-500/10"
                   >
                     <Radio className="h-5 w-5 animate-pulse" />
-                    <span>Start Video Recording</span>
+                    <span>Start Audio Recording</span>
                   </Button>
                 )}
 
@@ -290,29 +291,29 @@ export default function VideoRecorder({ assessmentId, onUploadComplete }: VideoR
                     className="bg-slate-100 hover:bg-slate-200 text-slate-950 font-bold py-6 text-base rounded-xl transition-all duration-300 flex items-center justify-center space-x-2"
                   >
                     <Square className="h-5 w-5 fill-slate-950" />
-                    <span>Stop & Upload Recording</span>
+                    <span>Stop & Upload Explanation</span>
                   </Button>
                 )}
 
                 {(status === 'processing' || status === 'uploading') && (
                   <Button disabled className="bg-slate-900 border border-slate-800 text-slate-500 py-6 text-base rounded-xl">
                     <Loader2 className="h-5 w-5 animate-spin mr-2" />
-                    <span>Uploading Media...</span>
+                    <span>Processing Media...</span>
                   </Button>
                 )}
               </div>
             )}
 
-            {/* Offline/Mock Simulation options */}
+            {/* Offline/Mock simulation bypass */}
             {(permissionStatus === 'denied' || process.env.NEXT_PUBLIC_SUPABASE_URL === undefined || !process.env.OPENAI_API_KEY) && (
               <Button
                 variant="outline"
-                onClick={handleSimulateMockVideo}
+                onClick={handleSimulateMockAudio}
                 disabled={status === 'uploading'}
                 className="border-dashed border-teal-500/30 text-teal-400 bg-teal-500/5 hover:bg-teal-500/10 hover:border-teal-500/50 py-5 rounded-xl text-xs font-semibold"
               >
                 <AlertCircle className="h-4 w-4 mr-2" />
-                Simulate Video Explanation (Skip Camera / Mic Input)
+                Simulate Audio Explanation (Skip Mic Input)
               </Button>
             )}
           </div>

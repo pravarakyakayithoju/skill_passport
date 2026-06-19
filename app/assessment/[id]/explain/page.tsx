@@ -9,7 +9,7 @@ import KeystrokeLogger from '@/components/assessment/KeystrokeLogger';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
-import { Video, Terminal, ArrowRight, Loader2, Play } from 'lucide-react';
+import { Mic, Terminal, ArrowRight, Loader2, Play } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface ExplainPageProps {
@@ -52,7 +52,7 @@ export default function ExplainPage({ params }: ExplainPageProps) {
   };
 
   const handleTimeExpire = () => {
-    toast.warning('Time expired for video phase!');
+    toast.warning('Time expired for audio phase!');
     // If they haven't uploaded, we transition anyway so they can see the passport
     router.push(`/assessment/${assessmentId}/processing`);
   };
@@ -69,7 +69,7 @@ export default function ExplainPage({ params }: ExplainPageProps) {
       <header className="flex flex-col md:flex-row items-start md:items-center justify-between border-b border-slate-900 pb-4 mb-8 gap-4 z-10 w-full max-w-4xl mx-auto">
         <div className="flex items-center space-x-3">
           <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-teal-400 to-emerald-500 flex items-center justify-center shadow-lg shadow-teal-500/20">
-            <Video className="h-6 w-6 text-slate-950" />
+            <Mic className="h-6 w-6 text-slate-950" />
           </div>
           <div>
             <div className="flex items-center space-x-2">
@@ -77,7 +77,7 @@ export default function ExplainPage({ params }: ExplainPageProps) {
                 Phase 3: Explain Your Code
               </span>
               <Badge variant="outline" className="border-teal-500/30 text-teal-400 font-mono text-[10px] uppercase">
-                Video Pitch
+                Voice Pitch
               </Badge>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
@@ -90,7 +90,7 @@ export default function ExplainPage({ params }: ExplainPageProps) {
         <div className="flex items-center space-x-4">
           <div className="hidden md:flex items-center space-x-1.5 text-xs text-slate-500 font-mono bg-slate-900/80 border border-slate-850 px-2.5 py-1.5 rounded-lg">
             <Terminal className="h-3.5 w-3.5 text-teal-400" />
-            <span>Camera Active</span>
+            <span>Microphone Active</span>
           </div>
           <AssessmentTimer durationSeconds={180} onExpire={handleTimeExpire} />
         </div>
@@ -104,7 +104,7 @@ export default function ExplainPage({ params }: ExplainPageProps) {
           <div className="space-y-3">
             <h2 className="text-xl font-bold text-slate-100">Explain Your Solution</h2>
             <p className="text-sm text-slate-400 leading-relaxed">
-              Record a short video (up to 90 seconds) explaining the code solution you wrote in Phase 1. 
+              Record a short audio explanation (up to 90 seconds) explaining the code solution you wrote in Phase 1. 
             </p>
           </div>
 

@@ -39,6 +39,7 @@ export default function CodeEditor({
   const [testResults, setTestResults] = useState<TestResult[] | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
   const [isSandboxDisabled, setIsSandboxDisabled] = useState(false);
+  const [sandboxType, setSandboxType] = useState<'judge0' | 'llm' | 'none'>('judge0');
 
   const handleRunCode = async () => {
     setIsRunning(true);
@@ -66,6 +67,7 @@ export default function CodeEditor({
       const data = await res.json();
       setTestResults(data.results || []);
       setIsSandboxDisabled(!!data.isSandboxDisabled);
+      setSandboxType(data.sandboxType || 'none');
     } catch (err: any) {
       console.error(err);
       setRunError(err.message || 'An error occurred while compiling code.');
@@ -173,13 +175,25 @@ export default function CodeEditor({
             </div>
           </CardHeader>
           <CardContent className="p-5 h-44 overflow-y-auto bg-slate-950/80 font-mono text-xs">
-            {isSandboxDisabled && !isRunning && (
+            {isSandboxDisabled && sandboxType === 'none' && !isRunning && (
               <div className="mb-3.5 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-start space-x-2 font-sans">
                 <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0 text-amber-500" />
                 <div>
                   <div className="font-semibold text-amber-300">Sandbox Execution Disabled</div>
                   <div className="text-[10px] text-slate-400 mt-0.5 leading-normal">
-                    No <code className="bg-slate-950 px-1 py-0.2 rounded text-amber-400">JUDGE0_API_KEY</code> found in <code className="bg-slate-950 px-1 py-0.2 rounded text-amber-400 font-mono">.env.local</code>. Real-time compilation checks are bypassed (simulating acceptance).
+                    No <code className="bg-slate-950 px-1 py-0.2 rounded text-amber-400">JUDGE0_API_KEY</code> or LLM API keys found in <code className="bg-slate-950 px-1 py-0.2 rounded text-amber-400 font-mono">.env.local</code>. Real-time compilation checks are bypassed (simulating acceptance).
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {sandboxType === 'llm' && !isRunning && (
+              <div className="mb-3.5 p-3 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-start space-x-2 font-sans">
+                <Check className="h-4 w-4 mt-0.5 flex-shrink-0 text-indigo-400" />
+                <div>
+                  <div className="font-semibold text-indigo-300 font-sans tracking-wide">AI Compilation Sandbox Active</div>
+                  <div className="text-[10px] text-slate-400 mt-0.5 leading-normal font-sans">
+                    Code execution and verification are simulated in real-time using the Groq Llama 3.3 / GPT-4o APIs.
                   </div>
                 </div>
               </div>
@@ -188,7 +202,11 @@ export default function CodeEditor({
             {isRunning && (
               <div className="flex items-center space-x-2 text-slate-400 italic">
                 <Loader2 className="h-4 w-4 animate-spin text-teal-400" />
-                <span>Compiling and verifying execution with Judge0...</span>
+                <span>
+                  {sandboxType === 'llm'
+                    ? 'Simulating and validating execution with Groq AI...'
+                    : 'Compiling and verifying execution with Judge0...'}
+                </span>
               </div>
             )}
 

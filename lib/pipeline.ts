@@ -109,9 +109,16 @@ export async function runPipeline(assessmentId: string): Promise<void> {
   }
 
   // 4. Code quality analysis via GPT-4o
-  let codeAnalysis: CodeAnalysisResult = MOCK_CODE_ANALYSIS;
-  if (!MOCK_AI && code) {
-    const prompt = `Rate this ${language} programming code from 0 to 100.
+  let codeAnalysis: CodeAnalysisResult = {
+    score: 0,
+    complexity: 'N/A',
+    readability: 'No code submitted',
+    issues: ['No code submitted']
+  };
+
+  if (code) {
+    if (!MOCK_AI) {
+      const prompt = `Rate this ${language} programming code from 0 to 100.
 Return JSON matching schema:
 {
   "score": 95,
@@ -121,28 +128,28 @@ Return JSON matching schema:
 }
 Code:
 ${code}`;
-    codeAnalysis = await askGPTJson<CodeAnalysisResult>(prompt, MOCK_CODE_ANALYSIS);
+      codeAnalysis = await askGPTJson<CodeAnalysisResult>(prompt, MOCK_CODE_ANALYSIS);
 
-    // Save to code_submissions
-    if (MOCK) {
-      const sub = mockMemoryDb.codeSubmissions.get(assessmentId) || {};
-      sub.ai_code_analysis = codeAnalysis;
-      mockMemoryDb.codeSubmissions.set(assessmentId, sub);
+      // Save to code_submissions
+      if (MOCK) {
+        const sub = mockMemoryDb.codeSubmissions.get(assessmentId) || {};
+        sub.ai_code_analysis = codeAnalysis;
+        mockMemoryDb.codeSubmissions.set(assessmentId, sub);
+      } else {
+        await supabaseAdmin
+          .from('code_submissions')
+          .update({ ai_code_analysis: codeAnalysis })
+          .eq('assessment_id', assessmentId);
+      }
     } else {
-      await supabaseAdmin
-        .from('code_submissions')
-        .update({ ai_code_analysis: codeAnalysis })
-        .eq('assessment_id', assessmentId);
+      codeAnalysis = MOCK_CODE_ANALYSIS;
     }
   }
 
   // 5. Video analysis & transcription
   let videoRecord: any = null;
   if (MOCK) {
-    videoRecord = mockMemoryDb.explanationVideos.get(assessmentId) || {
-      video_url: `videos/mock/${assessmentId}/explanation.webm`,
-      transcript: '',
-    };
+    videoRecord = mockMemoryDb.explanationVideos.get(assessmentId) || null;
   } else {
     const { data, error: videoError } = await supabaseAdmin
       .from('explanation_videos')
@@ -155,9 +162,15 @@ ${code}`;
   const transcript = videoRecord?.transcript || '';
   const videoUrl = videoRecord?.video_url || '';
 
-  let explanationAnalysis: CoherenceResult = MOCK_EXPLANATION_ANALYSIS;
-  if (!MOCK_AI && transcript && code) {
-    const coherencePrompt = `Analyze if this spoken explanation matches and correctly explains the submitted programming code.
+  let explanationAnalysis: CoherenceResult = {
+    score: 0,
+    coherent: false,
+    contradictions: ['No voice explanation video was submitted by the candidate.']
+  };
+
+  if (videoUrl && transcript) {
+    if (!MOCK_AI && code) {
+      const coherencePrompt = `Analyze if this spoken explanation matches and correctly explains the submitted programming code.
 Are there contradictions in complexity statements or logic descriptions?
 Return JSON matching schema:
 {
@@ -169,22 +182,26 @@ Code:
 ${code}
 Spoken Transcript:
 ${transcript}`;
-    explanationAnalysis = await askGPTJson<CoherenceResult>(coherencePrompt, MOCK_EXPLANATION_ANALYSIS);
+      explanationAnalysis = await askGPTJson<CoherenceResult>(coherencePrompt, MOCK_EXPLANATION_ANALYSIS);
 
-    // Save back to explanation_videos table
-    if (MOCK) {
-      const v = mockMemoryDb.explanationVideos.get(assessmentId) || {};
-      v.ai_explanation_analysis = explanationAnalysis;
-      v.score = explanationAnalysis.score;
-      mockMemoryDb.explanationVideos.set(assessmentId, v);
+      // Save back to explanation_videos table
+      if (MOCK) {
+        const v = mockMemoryDb.explanationVideos.get(assessmentId) || {};
+        v.ai_explanation_analysis = explanationAnalysis;
+        v.score = explanationAnalysis.score;
+        mockMemoryDb.explanationVideos.set(assessmentId, v);
+      } else {
+        await supabaseAdmin
+          .from('explanation_videos')
+          .update({
+            ai_explanation_analysis: explanationAnalysis,
+            score: explanationAnalysis.score,
+          })
+          .eq('assessment_id', assessmentId);
+      }
     } else {
-      await supabaseAdmin
-        .from('explanation_videos')
-        .update({
-          ai_explanation_analysis: explanationAnalysis,
-          score: explanationAnalysis.score,
-        })
-        .eq('assessment_id', assessmentId);
+      // Mock evaluation with high score only if video actually exists
+      explanationAnalysis = MOCK_EXPLANATION_ANALYSIS;
     }
   }
 

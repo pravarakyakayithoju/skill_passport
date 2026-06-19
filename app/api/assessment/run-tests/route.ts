@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { executeCodeInJudge0 } from '@/lib/judge0';
+import { executeCodeInJudge0, isLLMSandboxActive } from '@/lib/judge0';
 import { MOCK_JUDGE0 } from '@/lib/mock';
 
 export async function POST(req: NextRequest) {
@@ -22,7 +22,11 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    return Response.json({ results, isSandboxDisabled: MOCK_JUDGE0 });
+    const llmActive = isLLMSandboxActive();
+    const sandboxType = process.env.JUDGE0_API_KEY ? 'judge0' : (llmActive ? 'llm' : 'none');
+    const isSandboxDisabled = MOCK_JUDGE0 && !llmActive;
+
+    return Response.json({ results, isSandboxDisabled, sandboxType });
   } catch (error: any) {
     console.error('API run tests error:', error);
     return Response.json({ error: error.message || 'Internal Server Error' }, { status: 500 });

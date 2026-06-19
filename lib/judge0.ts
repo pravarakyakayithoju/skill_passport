@@ -1,4 +1,5 @@
 import { MOCK_JUDGE0 } from './mock';
+import { openai, CHAT_MODEL } from './openai';
 
 export const LANGUAGE_IDS: Record<string, number> = {
   javascript: 63,
@@ -13,6 +14,116 @@ interface TestResult {
   actual: string;
   passed: boolean;
   error?: string;
+}
+
+export function isLLMSandboxActive(): boolean {
+  return !process.env.JUDGE0_API_KEY && (!!process.env.GROQ_API_KEY || !!process.env.OPENAI_API_KEY);
+}
+
+/**
+ * Executes/simulates code execution using the LLM (Groq/OpenAI) when Judge0 is unavailable.
+ */
+async function executeCodeViaLLM(
+  sourceCode: string,
+  language: string,
+  testInput: string,
+  testExpected: string,
+  starterCode: string
+): Promise<{ passed: boolean; actual: string; error?: string }> {
+  const functionName = extractFunctionName(starterCode, language);
+
+  const prompt = `You are a precise, sandboxed code execution engine.
+Your task is to analyze and simulate the execution of the user's code for a specific test case. Do not execute anything in reality, but simulate it exactly according to the semantics of the language.
+
+Language: ${language}
+
+Starter Code:
+\`\`\`${language}
+${starterCode}
+\`\`\`
+
+User's Code:
+\`\`\`${language}
+${sourceCode}
+\`\`\`
+
+Primary Function to Execute: "${functionName}"
+
+Test Input (arguments passed to "${functionName}", structured as a JSON array of positional arguments):
+${testInput}
+
+For example, if the input is \`[[2, 7, 11, 15], 9]\`, you should simulate calling \`${functionName}([2, 7, 11, 15], 9)\`.
+
+You MUST respond with a JSON object matching this schema:
+{
+  "thought": "Write down a detailed step-by-step trace of each line of code executed with the given input, showing variable values at each step, to guarantee absolute accuracy.",
+  "actual": "The string representation of the final output or return value. For arrays/objects, return them as serialized JSON strings (e.g., \\"[0,1]\\"). If it's a primitive, return its string representation (e.g. \\"6\\" or \\"true\\").",
+  "error": "A string describing the compilation or runtime error if one occurred, otherwise null."
+}
+
+Do not include any explanation, markdown formatting, or text outside the JSON object. Do not wrap the JSON object in code blocks.`;
+
+  try {
+    const response = await openai.chat.completions.create({
+      model: CHAT_MODEL,
+      messages: [
+        {
+          role: 'system',
+          content: 'You are a code execution simulator. You output ONLY a raw JSON object and nothing else. No markdown, no pre-amble, no post-amble.',
+        },
+        {
+          role: 'user',
+          content: prompt,
+        },
+      ],
+      response_format: { type: 'json_object' },
+    });
+
+    const content = response.choices[0]?.message?.content?.trim();
+    if (!content) {
+      throw new Error('Empty response from LLM code executor');
+    }
+
+    const res = JSON.parse(content) as { actual: any; error?: string | null };
+
+    const hasRealError = res.error && 
+                         res.error !== 'null' && 
+                         res.error !== 'none' && 
+                         res.error !== 'None' && 
+                         String(res.error).trim() !== '';
+
+    if (hasRealError) {
+      return { passed: false, actual: '', error: String(res.error) };
+    }
+
+    // Convert actual to a string if it's not already
+    let actualStr = '';
+    if (res.actual !== undefined && res.actual !== null) {
+      if (typeof res.actual === 'object') {
+        actualStr = JSON.stringify(res.actual);
+      } else {
+        actualStr = String(res.actual).trim();
+      }
+    }
+
+    const expectedStr = (testExpected || '').trim();
+
+    let passed = false;
+    try {
+      // Attempt strict JSON match
+      const parsedActual = JSON.parse(actualStr);
+      const parsedExpected = JSON.parse(expectedStr);
+      passed = JSON.stringify(parsedActual) === JSON.stringify(parsedExpected);
+    } catch {
+      // Fall back to clean string match
+      passed = actualStr === expectedStr;
+    }
+
+    return { passed, actual: actualStr };
+  } catch (error: any) {
+    console.error('LLM Code Execution simulation error:', error);
+    return { passed: false, actual: '', error: error.message || 'LLM execution simulation error' };
+  }
 }
 
 /**
@@ -75,6 +186,11 @@ export async function executeCodeInJudge0(
   testExpected: string,
   starterCode: string
 ): Promise<{ passed: boolean; actual: string; error?: string }> {
+  // 1. Check if Judge0 is disabled but LLM is active
+  if (isLLMSandboxActive()) {
+    return executeCodeViaLLM(sourceCode, language, testInput, testExpected, starterCode);
+  }
+
   if (MOCK_JUDGE0) {
     // Standard mock pass (simulate delay of 200ms)
     await new Promise((r) => setTimeout(r, 200));

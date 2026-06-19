@@ -1,7 +1,7 @@
 import { supabaseAdmin } from './supabase/server';
 import { MOCK, MOCK_AI, MOCK_JUDGE0, MOCK_CODING_QUESTION, MOCK_MCQ_POOL, mockMemoryDb } from './mock';
 import { askGPTJson } from './openai';
-import { executeCodeInJudge0 } from './judge0';
+import { executeCodeInJudge0, isLLMSandboxActive } from './judge0';
 
 interface RawCodingQuestion {
   language: string;
@@ -82,20 +82,27 @@ export async function generateQuestions(
     attempts++;
     
     // Step 1: Generate coding question via GPT-4o
-    const codingPrompt = `Generate ONE coding question for a candidate skilled in "${primarySkill}".
+    const codingPrompt = `Generate ONE highly detailed and comprehensive coding question for a candidate skilled in "${primarySkill}".
 Difficulty should be medium, suitable for a 8-minute implementation.
+
+The description field MUST be extremely detailed and well-formatted in Markdown. It must include:
+1. **Problem Statement**: Clear, formal explanation of the problem.
+2. **Examples**: Walkthroughs of the example cases explaining how the input maps to the output.
+3. **Constraints**: Clear constraints (e.g. array length, integer ranges, time and space complexity expectation).
+4. **Edge Cases**: Mentions of edge cases to consider (e.g. empty lists, negative numbers).
+
 Output format MUST be JSON matching the following schema:
 {
-  "language": "javascript",
+  "language": "javascript" | "python",
   "title": "string",
-  "description": "string (markdown allowed)",
-  "starter_code": "string (function boilerplate)",
+  "description": "string (highly detailed markdown description)",
+  "starter_code": "string (empty function boilerplate/stub containing only the function signature, JSDoc/type comments, and an empty body or return/pass. It MUST NOT contain any solution logic or implementation)",
   "visible_tests": [{"input": "string (JSON array of args)", "expected": "string (JSON expected result)"}],
   "hidden_tests": [{"input": "string (JSON array of args)", "expected": "string (JSON expected result)"}],
-  "reference_solution": "string (working code for starter function)"
+  "reference_solution": "string (complete, working implementation of the function)"
 }
 Generate exactly 2 visible_tests (examples) and exactly 6 hidden_tests.
-Only support "javascript" or "python" for language. Include clear instructions.`;
+Only support "javascript" or "python" for language.`;
 
     const rawQuestion = await askGPTJson<RawCodingQuestion | null>(codingPrompt, null);
     if (!rawQuestion) continue;
@@ -104,9 +111,11 @@ Only support "javascript" or "python" for language. Include clear instructions.`
     const validatedVisible: typeof rawQuestion.visible_tests = [];
     const validatedHidden: typeof rawQuestion.hidden_tests = [];
 
+    const bypassValidation = MOCK_JUDGE0 && !isLLMSandboxActive();
+
     // Run visible tests
     for (const test of rawQuestion.visible_tests) {
-      const res = MOCK_JUDGE0 
+      const res = bypassValidation 
         ? { passed: true, actual: test.expected }
         : await executeCodeInJudge0(
             rawQuestion.reference_solution,
@@ -122,7 +131,7 @@ Only support "javascript" or "python" for language. Include clear instructions.`
 
     // Run hidden tests
     for (const test of rawQuestion.hidden_tests) {
-      const res = MOCK_JUDGE0
+      const res = bypassValidation
         ? { passed: true, actual: test.expected }
         : await executeCodeInJudge0(
             rawQuestion.reference_solution,
@@ -136,8 +145,8 @@ Only support "javascript" or "python" for language. Include clear instructions.`
       }
     }
 
-    // Check if at least 4 hidden tests passed or if Judge0 is mocked
-    if (MOCK_JUDGE0 || (validatedHidden.length >= 4 && validatedVisible.length > 0)) {
+    // Check if at least 4 hidden tests passed or if sandbox execution is bypassed
+    if (bypassValidation || (validatedHidden.length >= 4 && validatedVisible.length > 0)) {
       generatedQuestion = {
         ...rawQuestion,
         visible_tests: validatedVisible,

@@ -45,7 +45,8 @@ export default function ResumeUpload() {
     const files = e.dataTransfer.files;
     if (files && files.length > 0) {
       const selectedFile = files[0];
-      if (selectedFile.type === 'application/pdf') {
+      const isPdf = selectedFile.type === 'application/pdf' || selectedFile.name.toLowerCase().endsWith('.pdf');
+      if (isPdf) {
         setFile(selectedFile);
         triggerUpload(selectedFile);
       } else {
@@ -58,7 +59,8 @@ export default function ResumeUpload() {
     const files = e.target.files;
     if (files && files.length > 0) {
       const selectedFile = files[0];
-      if (selectedFile.type === 'application/pdf') {
+      const isPdf = selectedFile.type === 'application/pdf' || selectedFile.name.toLowerCase().endsWith('.pdf');
+      if (isPdf) {
         setFile(selectedFile);
         triggerUpload(selectedFile);
       } else {
