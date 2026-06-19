@@ -6,6 +6,8 @@ export const LANGUAGE_IDS: Record<string, number> = {
   python: 71,
   java: 62,
   cpp: 54,
+  c: 50,
+  csharp: 51,
 };
 
 interface TestResult {
@@ -63,81 +65,113 @@ You MUST respond with a JSON object matching this schema:
 
 Do not include any explanation, markdown formatting, or text outside the JSON object. Do not wrap the JSON object in code blocks.`;
 
-  try {
-    const response = await openai.chat.completions.create({
-      model: CHAT_MODEL,
-      messages: [
-        {
-          role: 'system',
-          content: 'You are a code execution simulator. You output ONLY a raw JSON object and nothing else. No markdown, no pre-amble, no post-amble.',
-        },
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
-      response_format: { type: 'json_object' },
-    });
+  const models = [CHAT_MODEL];
+  const isGroq = CHAT_MODEL.includes('llama');
+  if (isGroq && CHAT_MODEL !== 'llama-3.1-8b-instant') {
+    models.push('llama-3.1-8b-instant');
+  }
 
-    const content = response.choices[0]?.message?.content?.trim();
-    if (!content) {
-      throw new Error('Empty response from LLM code executor');
-    }
+  for (let i = 0; i < models.length; i++) {
+    const model = models[i];
+    try {
+      const response = await openai.chat.completions.create({
+        model: model,
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a code execution simulator. You output ONLY a raw JSON object and nothing else. No markdown, no pre-amble, no post-amble.',
+          },
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+        response_format: { type: 'json_object' },
+      });
 
-    const res = JSON.parse(content) as { actual: any; error?: string | null };
+      const content = response.choices[0]?.message?.content?.trim();
+      if (!content) {
+        throw new Error('Empty response from LLM code executor');
+      }
 
-    const hasRealError = res.error && 
-                         res.error !== 'null' && 
-                         res.error !== 'none' && 
-                         res.error !== 'None' && 
-                         String(res.error).trim() !== '';
+      const res = JSON.parse(content) as { actual: any; error?: string | null };
 
-    if (hasRealError) {
-      return { passed: false, actual: '', error: String(res.error) };
-    }
+      const hasRealError = res.error && 
+                           res.error !== 'null' && 
+                           res.error !== 'none' && 
+                           res.error !== 'None' && 
+                           String(res.error).trim() !== '';
 
-    // Convert actual to a string if it's not already
-    let actualStr = '';
-    if (res.actual !== undefined && res.actual !== null) {
-      if (typeof res.actual === 'object') {
-        actualStr = JSON.stringify(res.actual);
+      if (hasRealError) {
+        return { passed: false, actual: '', error: String(res.error) };
+      }
+
+      // Convert actual to a string if it's not already
+      let actualStr = '';
+      if (res.actual !== undefined && res.actual !== null) {
+        if (typeof res.actual === 'object') {
+          actualStr = JSON.stringify(res.actual);
+        } else {
+          actualStr = String(res.actual).trim();
+        }
+      }
+
+      const expectedStr = (testExpected || '').trim();
+
+      let passed = false;
+      try {
+        // Attempt strict JSON match
+        const parsedActual = JSON.parse(actualStr);
+        const parsedExpected = JSON.parse(expectedStr);
+        passed = JSON.stringify(parsedActual) === JSON.stringify(parsedExpected);
+      } catch {
+        // Fall back to clean string match
+        passed = actualStr === expectedStr;
+      }
+
+      return { passed, actual: actualStr };
+    } catch (error: any) {
+      console.error(`LLM Code Execution error with model "${model}":`, error.message || error);
+      if (i < models.length - 1) {
+        console.warn(`Attempting fallback to next model...`);
       } else {
-        actualStr = String(res.actual).trim();
+        return { passed: false, actual: '', error: error.message || 'LLM execution simulation error' };
       }
     }
-
-    const expectedStr = (testExpected || '').trim();
-
-    let passed = false;
-    try {
-      // Attempt strict JSON match
-      const parsedActual = JSON.parse(actualStr);
-      const parsedExpected = JSON.parse(expectedStr);
-      passed = JSON.stringify(parsedActual) === JSON.stringify(parsedExpected);
-    } catch {
-      // Fall back to clean string match
-      passed = actualStr === expectedStr;
-    }
-
-    return { passed, actual: actualStr };
-  } catch (error: any) {
-    console.error('LLM Code Execution simulation error:', error);
-    return { passed: false, actual: '', error: error.message || 'LLM execution simulation error' };
   }
+
+  return { passed: false, actual: '', error: 'LLM execution simulation failed all models' };
 }
 
 /**
  * Automatically extracts the function name from starter code.
  */
 function extractFunctionName(code: string, language: string): string {
-  if (language === 'javascript' || language === 'typescript') {
+  const lang = (language || '').toLowerCase().trim();
+  if (lang === 'javascript' || lang === 'typescript') {
     const match = code.match(/function\s+(\w+)/);
     return match ? match[1] : 'solution';
-  } else if (language === 'python') {
+  } else if (lang === 'python') {
     const match = code.match(/def\s+(\w+)/);
     return match ? match[1] : 'solution';
+  } else {
+    // Java, C, C++, C# style matches: type name(args)
+    // Find name followed by parenthesis, avoiding common language keywords
+    const matches = [];
+    const regex = /(\w+)\s*\(/g;
+    let match;
+    while ((match = regex.exec(code)) !== null) {
+      matches.push(match);
+    }
+    const keywords = ['if', 'for', 'while', 'catch', 'switch', 'return', 'class', 'public', 'private', 'protected', 'static', 'new', 'override', 'void', 'int', 'float', 'double', 'char', 'bool', 'boolean', 'string'];
+    for (const m of matches) {
+      const name = m[1];
+      if (!keywords.includes(name)) {
+        return name;
+      }
+    }
+    return 'solution';
   }
-  return 'solution';
 }
 
 /**

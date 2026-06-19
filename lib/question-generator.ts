@@ -3,14 +3,22 @@ import { MOCK, MOCK_AI, MOCK_JUDGE0, MOCK_CODING_QUESTION, MOCK_MCQ_POOL, mockMe
 import { askGPTJson } from './openai';
 import { executeCodeInJudge0, isLLMSandboxActive } from './judge0';
 
-interface RawCodingQuestion {
-  language: string;
+interface LangQuestion {
+  starter_code: string;
+  reference_solution: string;
+}
+
+interface RawMultiCodingQuestion {
   title: string;
   description: string;
-  starter_code: string;
   visible_tests: Array<{ input: string; expected: string }>;
   hidden_tests: Array<{ input: string; expected: string }>;
-  reference_solution: string;
+  javascript: LangQuestion;
+  python: LangQuestion;
+  java: LangQuestion;
+  cpp: LangQuestion;
+  c: LangQuestion;
+  csharp: LangQuestion;
 }
 
 interface RawMCQPool {
@@ -25,45 +33,38 @@ interface RawMCQPool {
 }
 
 function extractStarterCode(referenceSolution: string, language: string): string {
+  const lang = (language || '').toLowerCase().trim();
   if (!referenceSolution) {
-    return language === 'python'
-      ? `def solution():\n    # Write your code here\n    pass`
-      : `function solution() {\n  // Write your code here\n}`;
-  }
-
-  if (language === 'python') {
-    const match = referenceSolution.match(/def\s+\w+\s*\(.*?\)\s*:/);
-    if (match) {
-      return `${match[0]}\n    # Write your code here\n    pass`;
-    }
-    return `def solution():\n    # Write your code here\n    pass`;
-  } else {
-    const match = referenceSolution.match(/function\s+\w+\s*\(.*?\)/);
-    if (match) {
-      return `${match[0]} {\n  // Write your code here\n}`;
-    }
-    const arrowMatch = referenceSolution.match(/(?:const|let|var)\s+(\w+)\s*=\s*(?:\(.*?\)|[^=]+?)\s*=>/);
-    if (arrowMatch) {
-      return `${arrowMatch[0]} {\n  // Write your code here\n}`;
-    }
+    if (lang === 'python') return `def solution():\n    # Write your code here\n    pass`;
+    if (lang === 'java') return `class Solution {\n    public int[] solution() {\n        // Write your code here\n    }\n}`;
+    if (lang === 'cpp') return `class Solution {\npublic:\n    void solution() {\n        // Write your code here\n    }\n};`;
+    if (lang === 'c') return `void solution() {\n    // Write your code here\n}`;
+    if (lang === 'csharp') return `public class Solution {\n    public void solution() {\n        // Write your code here\n    }\n}`;
     return `function solution() {\n  // Write your code here\n}`;
   }
+
+  if (lang === 'python') {
+    const match = referenceSolution.match(/def\s+\w+\s*\(.*?\)\s*:/);
+    if (match) return `${match[0]}\n    # Write your code here\n    pass`;
+    return `def solution():\n    # Write your code here\n    pass`;
+  } else if (lang === 'javascript' || lang === 'typescript') {
+    const match = referenceSolution.match(/function\s+\w+\s*\(.*?\)/);
+    if (match) return `${match[0]} {\n  // Write your code here\n}`;
+    const arrowMatch = referenceSolution.match(/(?:const|let|var)\s+(\w+)\s*=\s*(?:\(.*?\)|[^=]+?)\s*=>/);
+    if (arrowMatch) return `${arrowMatch[0]} {\n  // Write your code here\n}`;
+    return `function solution() {\n  // Write your code here\n}`;
+  }
+  
+  return referenceSolution;
 }
 
-function sanitizeRawQuestion(q: any): RawCodingQuestion {
+function sanitizeRawQuestion(q: any): RawMultiCodingQuestion {
   if (!q) {
     throw new Error('Raw question response is empty.');
   }
 
-  const language = q.language === 'python' ? 'python' : 'javascript';
   const title = q.title || 'Coding Challenge';
   const description = q.description || 'Solve the coding challenge.';
-  const reference_solution = q.reference_solution || '';
-  
-  let starter_code = q.starter_code;
-  if (!starter_code || typeof starter_code !== 'string') {
-    starter_code = extractStarterCode(reference_solution, language);
-  }
 
   const visible_tests = Array.isArray(q.visible_tests) 
     ? q.visible_tests.map((t: any) => ({
@@ -79,14 +80,32 @@ function sanitizeRawQuestion(q: any): RawCodingQuestion {
       }))
     : [];
 
+  const sanitizeLang = (langData: any, lang: string) => {
+    const data = langData || {};
+    const reference_solution = data.reference_solution || '';
+    
+    let starter_code = data.starter_code;
+    if (!starter_code || typeof starter_code !== 'string') {
+      starter_code = extractStarterCode(reference_solution, lang);
+    }
+
+    return {
+      starter_code,
+      reference_solution,
+    };
+  };
+
   return {
-    language,
     title,
     description,
-    starter_code,
     visible_tests,
     hidden_tests,
-    reference_solution,
+    javascript: sanitizeLang(q.javascript, 'javascript'),
+    python: sanitizeLang(q.python, 'python'),
+    java: sanitizeLang(q.java, 'java'),
+    cpp: sanitizeLang(q.cpp, 'cpp'),
+    c: sanitizeLang(q.c, 'c'),
+    csharp: sanitizeLang(q.csharp, 'csharp'),
   };
 }
 
@@ -125,13 +144,27 @@ export async function generateQuestions(
   if (MOCK_AI) {
     const codingRow = {
       assessment_id: assessmentId,
-      language: MOCK_CODING_QUESTION.language,
+      language: 'multi',
       title: MOCK_CODING_QUESTION.title,
       description: MOCK_CODING_QUESTION.description,
-      starter_code: MOCK_CODING_QUESTION.starter_code,
+      starter_code: JSON.stringify({
+        javascript: MOCK_CODING_QUESTION.starter_code,
+        python: `def twoSum(nums, target):\n    # Write your code here\n    pass`,
+        java: `class Solution {\n    public int[] twoSum(int[] nums, int target) {\n        // Write your code here\n    }\n}`,
+        cpp: `class Solution {\npublic:\n    vector<int> twoSum(vector<int>& nums, int target) {\n        // Write your code here\n    }\n};`,
+        c: `int* twoSum(int* nums, int numsSize, int target, int* returnSize) {\n    // Write your code here\n}`,
+        csharp: `public class Solution {\n    public int[] TwoSum(int[] nums, int target) {\n        // Write your code here\n    }\n}`
+      }),
       visible_tests: MOCK_CODING_QUESTION.visible_tests,
       hidden_tests: MOCK_CODING_QUESTION.hidden_tests,
-      reference_solution: MOCK_CODING_QUESTION.reference_solution,
+      reference_solution: JSON.stringify({
+        javascript: MOCK_CODING_QUESTION.reference_solution,
+        python: `def twoSum(nums, target):\n    mapping = {}\n    for i, num in enumerate(nums):\n        comp = target - num\n        if comp in mapping:\n            return [mapping[comp], i]\n        mapping[num] = i\n    return []`,
+        java: `class Solution {\n    public int[] twoSum(int[] nums, int target) {\n        java.util.Map<Integer, Integer> map = new java.util.HashMap<>();\n        for (int i = 0; i < nums.length; i++) {\n            int complement = target - nums[i];\n            if (map.containsKey(complement)) {\n                return new int[] { map.get(complement), i };\n            }\n            map.put(nums[i], i);\n        }\n        return new int[0];\n    }\n}`,
+        cpp: `class Solution {\npublic:\n    vector<int> twoSum(vector<int>& nums, int target) {\n        unordered_map<int, int> map;\n        for (int i = 0; i < nums.size(); i++) {\n            int complement = target - nums[i];\n            if (map.find(complement) != map.end()) {\n                return {map[complement], i};\n            }\n            map[nums[i]] = i;\n        }\n        return {};\n    }\n};`,
+        c: `int* twoSum(int* nums, int numsSize, int target, int* returnSize) {\n    *returnSize = 2;\n    int* res = (int*)malloc(2 * sizeof(int));\n    for (int i = 0; i < numsSize; i++) {\n        for (int j = i + 1; j < numsSize; j++) {\n            if (nums[i] + nums[j] == target) {\n                res[0] = i; res[1] = j;\n                return res;\n            }\n        }\n    }\n    return res;\n}`,
+        csharp: `public class Solution {\n    public int[] TwoSum(int[] nums, int target) {\n        var map = new System.Collections.Generic.Dictionary<int, int>();\n        for (int i = 0; i < nums.Length; i++) {\n            int complement = target - nums[i];\n            if (map.ContainsKey(complement)) {\n                return new int[] { map[complement], i };\n            }\n            map[nums[i]] = i;\n        }\n        return new int[0];\n    }\n}`
+      }),
     };
 
     const mcqsToInsert = MOCK_MCQ_POOL.map((q, idx) => ({
@@ -163,7 +196,7 @@ export async function generateQuestions(
   }
 
   // Real GPT-4o (or Groq) and Judge0 validation flow:
-  let generatedQuestion: RawCodingQuestion | null = null;
+  let generatedQuestion: RawMultiCodingQuestion | null = null;
   let attempts = 0;
   const maxAttempts = 2;
 
@@ -171,10 +204,10 @@ export async function generateQuestions(
     attempts++;
     
     // Step 1: Generate coding question via GPT-4o
-    const codingPrompt = `Generate ONE highly detailed and comprehensive coding question for a candidate skilled in "${primarySkill}".
+    const codingPrompt = `Generate ONE highly detailed coding question for a candidate.
 Difficulty should be medium, suitable for a 8-minute implementation.
 
-The description field MUST be extremely detailed and well-formatted in Markdown. It must include:
+The description field MUST be language-agnostic and well-formatted in Markdown. It must include:
 1. **Problem Statement**: Clear, formal explanation of the problem.
 2. **Examples**: Walkthroughs of the example cases explaining how the input maps to the output.
 3. **Constraints**: Clear constraints (e.g. array length, integer ranges, time and space complexity expectation).
@@ -182,21 +215,41 @@ The description field MUST be extremely detailed and well-formatted in Markdown.
 
 Output format MUST be JSON matching the following schema:
 {
-  "language": "javascript" | "python",
   "title": "string",
   "description": "string (highly detailed markdown description)",
-  "starter_code": "string (empty starter code boilerplate/stub, including function signature, type comments, and empty body or pass)",
   "visible_tests": [{"input": "string (JSON array of args)", "expected": "string (JSON expected result)"}],
   "hidden_tests": [{"input": "string (JSON array of args)", "expected": "string (JSON expected result)"}],
-  "reference_solution": "string (complete, working implementation of the function)"
+  "javascript": {
+    "starter_code": "string (empty starter code boilerplate/stub)",
+    "reference_solution": "string (complete, working implementation of the function)"
+  },
+  "python": {
+    "starter_code": "string (empty starter code boilerplate/stub)",
+    "reference_solution": "string (complete, working implementation of the function)"
+  },
+  "java": {
+    "starter_code": "string (empty starter code boilerplate/stub)",
+    "reference_solution": "string (complete, working implementation of the function)"
+  },
+  "cpp": {
+    "starter_code": "string (empty starter code boilerplate/stub)",
+    "reference_solution": "string (complete, working implementation of the function)"
+  },
+  "c": {
+    "starter_code": "string (empty starter code boilerplate/stub)",
+    "reference_solution": "string (complete, working implementation of the function)"
+  },
+  "csharp": {
+    "starter_code": "string (empty starter code boilerplate/stub)",
+    "reference_solution": "string (complete, working implementation of the function)"
+  }
 }
-Generate exactly 2 visible_tests (examples) and exactly 6 hidden_tests.
-Only support "javascript" or "python" for language.`;
+Generate exactly 2 visible_tests (examples) and exactly 6 hidden_tests.`;
 
     const rawQuestion = await askGPTJson<any>(codingPrompt, null);
     if (!rawQuestion) continue;
 
-    let sanitizedQuestion: RawCodingQuestion;
+    let sanitizedQuestion: RawMultiCodingQuestion;
     try {
       sanitizedQuestion = sanitizeRawQuestion(rawQuestion);
     } catch (e) {
@@ -205,50 +258,65 @@ Only support "javascript" or "python" for language.`;
     }
 
     // Step 2: Validate the generated tests using the reference solution in Judge0 (or mock it if MOCK_JUDGE0 is active)
-    const validatedVisible: typeof sanitizedQuestion.visible_tests = [];
-    const validatedHidden: typeof sanitizedQuestion.hidden_tests = [];
-
     const bypassValidation = MOCK_JUDGE0;
+    let jsPassed = bypassValidation;
+    let pyPassed = bypassValidation;
 
-    // Run visible tests
-    for (const test of sanitizedQuestion.visible_tests) {
-      const res = bypassValidation 
-        ? { passed: true, actual: test.expected }
-        : await executeCodeInJudge0(
-            sanitizedQuestion.reference_solution,
-            sanitizedQuestion.language,
-            test.input,
-            test.expected,
-            sanitizedQuestion.starter_code
-          );
-      if (res.passed) {
-        validatedVisible.push(test);
+    if (!bypassValidation) {
+      // Validate Javascript
+      let jsVisibleCount = 0;
+      for (const test of sanitizedQuestion.visible_tests) {
+        const res = await executeCodeInJudge0(
+          sanitizedQuestion.javascript.reference_solution,
+          'javascript',
+          test.input,
+          test.expected,
+          sanitizedQuestion.javascript.starter_code
+        );
+        if (res.passed) jsVisibleCount++;
       }
+      let jsHiddenCount = 0;
+      for (const test of sanitizedQuestion.hidden_tests) {
+        const res = await executeCodeInJudge0(
+          sanitizedQuestion.javascript.reference_solution,
+          'javascript',
+          test.input,
+          test.expected,
+          sanitizedQuestion.javascript.starter_code
+        );
+        if (res.passed) jsHiddenCount++;
+      }
+      jsPassed = jsHiddenCount >= 4 && jsVisibleCount > 0;
+
+      // Validate Python
+      let pyVisibleCount = 0;
+      for (const test of sanitizedQuestion.visible_tests) {
+        const res = await executeCodeInJudge0(
+          sanitizedQuestion.python.reference_solution,
+          'python',
+          test.input,
+          test.expected,
+          sanitizedQuestion.python.starter_code
+        );
+        if (res.passed) pyVisibleCount++;
+      }
+      let pyHiddenCount = 0;
+      for (const test of sanitizedQuestion.hidden_tests) {
+        const res = await executeCodeInJudge0(
+          sanitizedQuestion.python.reference_solution,
+          'python',
+          test.input,
+          test.expected,
+          sanitizedQuestion.python.starter_code
+        );
+        if (res.passed) pyHiddenCount++;
+      }
+      pyPassed = pyHiddenCount >= 4 && pyVisibleCount > 0;
     }
 
-    // Run hidden tests
-    for (const test of sanitizedQuestion.hidden_tests) {
-      const res = bypassValidation
-        ? { passed: true, actual: test.expected }
-        : await executeCodeInJudge0(
-            sanitizedQuestion.reference_solution,
-            sanitizedQuestion.language,
-            test.input,
-            test.expected,
-            sanitizedQuestion.starter_code
-          );
-      if (res.passed) {
-        validatedHidden.push(test);
-      }
-    }
-
-    // Check if at least 4 hidden tests passed or if sandbox execution is bypassed
-    if (bypassValidation || (validatedHidden.length >= 4 && validatedVisible.length > 0)) {
-      generatedQuestion = {
-        ...sanitizedQuestion,
-        visible_tests: validatedVisible,
-        hidden_tests: validatedHidden,
-      };
+    // Both languages must pass validation (or validation is bypassed)
+    if (jsPassed && pyPassed) {
+      generatedQuestion = sanitizedQuestion;
       break;
     }
   }
@@ -260,13 +328,27 @@ Only support "javascript" or "python" for language.`;
   // Insert validated coding question to Supabase or memory DB
   const codingRow = {
     assessment_id: assessmentId,
-    language: generatedQuestion.language,
+    language: 'multi',
     title: generatedQuestion.title,
     description: generatedQuestion.description,
-    starter_code: generatedQuestion.starter_code,
+    starter_code: JSON.stringify({
+      javascript: generatedQuestion.javascript.starter_code,
+      python: generatedQuestion.python.starter_code,
+      java: generatedQuestion.java.starter_code,
+      cpp: generatedQuestion.cpp.starter_code,
+      c: generatedQuestion.c.starter_code,
+      csharp: generatedQuestion.csharp.starter_code,
+    }),
     visible_tests: generatedQuestion.visible_tests,
     hidden_tests: generatedQuestion.hidden_tests,
-    reference_solution: generatedQuestion.reference_solution,
+    reference_solution: JSON.stringify({
+      javascript: generatedQuestion.javascript.reference_solution,
+      python: generatedQuestion.python.reference_solution,
+      java: generatedQuestion.java.reference_solution,
+      cpp: generatedQuestion.cpp.reference_solution,
+      c: generatedQuestion.c.reference_solution,
+      csharp: generatedQuestion.csharp.reference_solution,
+    }),
   };
 
   if (MOCK) {

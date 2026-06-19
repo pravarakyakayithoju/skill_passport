@@ -79,8 +79,22 @@ export async function runPipeline(assessmentId: string): Promise<void> {
     question = data;
   }
 
-  const hiddenTests = question?.hidden_tests || [];
-  const starterCode = question?.starter_code || '';
+  const hiddenTestsRaw = question?.hidden_tests || [];
+  let hiddenTests = [];
+  let starterCode = question?.starter_code || '';
+
+  if (typeof starterCode === 'string' && starterCode.startsWith('{')) {
+    try {
+      const parsedStarter = JSON.parse(starterCode);
+      starterCode = parsedStarter[language] || '';
+    } catch {}
+  }
+  
+  if (Array.isArray(hiddenTestsRaw)) {
+    hiddenTests = hiddenTestsRaw;
+  } else if (hiddenTestsRaw && typeof hiddenTestsRaw === 'object') {
+    hiddenTests = hiddenTestsRaw[language] || [];
+  }
 
   // 3. Run Judge0 on hidden tests
   let passRate = 0;

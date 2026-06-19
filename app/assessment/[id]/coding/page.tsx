@@ -47,6 +47,7 @@ export default function CodingPage({ params }: CodingPageProps) {
   
   const { candidateName, primarySkill } = useAssessmentStore();
   const [questionData, setQuestionData] = useState<any>(null);
+  const [selectedLanguage, setSelectedLanguage] = useState<'javascript' | 'python' | 'java' | 'cpp' | 'c' | 'csharp'>('javascript');
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -66,6 +67,17 @@ export default function CodingPage({ params }: CodingPageProps) {
 
         if (data.codingQuestion) {
           setQuestionData(data.codingQuestion);
+          // Set initial active language preference
+          if (data.codingQuestion.isMulti) {
+            const pref = (primarySkill || '').toLowerCase().trim();
+            if (pref === 'python') {
+              setSelectedLanguage('python');
+            } else {
+              setSelectedLanguage('javascript');
+            }
+          } else {
+            setSelectedLanguage(data.codingQuestion.language === 'python' ? 'python' : 'javascript');
+          }
         } else {
           toast.error('Question data is not available. Check database logs.');
           router.push('/');
@@ -79,7 +91,7 @@ export default function CodingPage({ params }: CodingPageProps) {
     };
 
     fetchQuestion();
-  }, [assessmentId, router]);
+  }, [assessmentId, router, primarySkill]);
 
   const handleSubmitCode = async (code: string) => {
     if (isSubmitting) return;
@@ -92,7 +104,7 @@ export default function CodingPage({ params }: CodingPageProps) {
         body: JSON.stringify({
           assessmentId,
           code,
-          language: questionData?.language || 'javascript',
+          language: selectedLanguage,
         }),
       });
 
@@ -110,11 +122,6 @@ export default function CodingPage({ params }: CodingPageProps) {
 
   const handleTimeExpire = () => {
     toast.warning('Time expired! Auto-submitting your coding solution...');
-    // We trigger submission automatically with empty string or current value. Since we are inside the page wrapper,
-    // the Monaco editor code state is inside the CodeEditor component. If Monaco has unsaved code, we submit what is saved or can trigger it.
-    // To solve this simply, we will submit whatever code is stored, or we can just redirect, since Judge0 execution inside pipeline can read the code submission.
-    // If submit fails or isn't called, it will default to empty code or starter code which is fine.
-    // Let's redirect to MCQ.
     router.push(`/assessment/${assessmentId}/mcq`);
   };
 
@@ -157,9 +164,36 @@ export default function CodingPage({ params }: CodingPageProps) {
               <span className="text-lg font-bold tracking-tight text-slate-100">
                 Phase 1: Technical Coding
               </span>
-              <Badge variant="outline" className="border-teal-500/30 text-teal-400 font-mono text-[10px] uppercase">
-                {questionData?.language}
-              </Badge>
+              {questionData?.isMulti ? (
+                <select
+                  value={selectedLanguage}
+                  onChange={(e) => {
+                    const newLang = e.target.value as any;
+                    setSelectedLanguage(newLang);
+                    const langNames: Record<string, string> = {
+                      javascript: 'JavaScript',
+                      python: 'Python',
+                      java: 'Java',
+                      cpp: 'C++',
+                      c: 'C',
+                      csharp: 'C#',
+                    };
+                    toast.info(`Switched coding environment to ${langNames[newLang] || newLang}`);
+                  }}
+                  className="bg-slate-900 border border-slate-800 text-teal-400 font-mono text-xs rounded-lg px-2.5 py-1 focus:ring-teal-500 focus:border-teal-500 outline-none cursor-pointer"
+                >
+                  <option value="javascript">JavaScript</option>
+                  <option value="python">Python</option>
+                  <option value="java">Java</option>
+                  <option value="cpp">C++</option>
+                  <option value="c">C</option>
+                  <option value="csharp">C#</option>
+                </select>
+              ) : (
+                <Badge variant="outline" className="border-teal-500/30 text-teal-400 font-mono text-[10px] uppercase">
+                  {selectedLanguage}
+                </Badge>
+              )}
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
               Candidate: <span className="text-slate-300 font-semibold">{candidateName || 'Anonymous'}</span> • Target skill: <span className="text-slate-300 font-semibold capitalize">{primarySkill || 'JavaScript'}</span>
@@ -181,11 +215,20 @@ export default function CodingPage({ params }: CodingPageProps) {
       {questionData && (
         <div className="flex-1 z-10">
           <CodeEditor
+            key={selectedLanguage}
             title={questionData.title}
             description={questionData.description}
-            language={questionData.language}
-            starterCode={questionData.starter_code}
-            visibleTests={questionData.visible_tests || []}
+            language={selectedLanguage}
+            starterCode={
+              questionData.isMulti
+                ? questionData.starterCodes[selectedLanguage]
+                : questionData.starter_code
+            }
+            visibleTests={
+              questionData.isMulti
+                ? questionData.visibleTests[selectedLanguage] || []
+                : questionData.visible_tests || []
+            }
             onSubmit={handleSubmitCode}
             isSubmitting={isSubmitting}
           />

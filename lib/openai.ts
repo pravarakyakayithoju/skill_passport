@@ -5,7 +5,7 @@ export const isGroq =
   !!process.env.GROQ_API_KEY ||
   (!!process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY.startsWith('gsk_'));
 
-export const CHAT_MODEL = isGroq ? 'llama-3.3-70b-versatile' : 'gpt-4o';
+export const CHAT_MODEL: string = isGroq ? 'llama-3.3-70b-versatile' : 'gpt-4o';
 
 export const openai = new OpenAI({
   apiKey: process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY || 'placeholder-key',

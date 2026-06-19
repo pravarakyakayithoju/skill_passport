@@ -4,6 +4,37 @@ import { NextRequest } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/server';
 import { MOCK, mockMemoryDb } from '@/lib/mock';
 
+function parseCodingQuestion(questionData: any) {
+  if (!questionData) return null;
+  
+  let isMulti = false;
+  let starterCodes = { javascript: '', python: '', java: '', cpp: '', c: '', csharp: '' };
+  let visibleTests = { javascript: [], python: [], java: [], cpp: [], c: [], csharp: [] };
+  
+  const starterCodeStr = questionData.starter_code || '';
+  if (typeof starterCodeStr === 'string' && starterCodeStr.trim().startsWith('{')) {
+    try {
+      starterCodes = JSON.parse(starterCodeStr);
+      const vis = questionData.visible_tests;
+      visibleTests = typeof vis === 'string' ? JSON.parse(vis) : vis;
+      isMulti = true;
+    } catch (e) {
+      console.error('Failed to parse multi-language JSON fields:', e);
+    }
+  }
+
+  return {
+    title: questionData.title,
+    description: questionData.description,
+    isMulti,
+    language: questionData.language,
+    starter_code: questionData.starter_code,
+    visible_tests: questionData.visible_tests,
+    starterCodes,
+    visibleTests,
+  };
+}
+
 export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } }
@@ -25,13 +56,7 @@ export async function GET(
       if (assessment.status === 'in_progress') {
         const questionData = mockMemoryDb.codingQuestions.get(id);
         if (questionData) {
-          codingQuestion = {
-            language: questionData.language,
-            title: questionData.title,
-            description: questionData.description,
-            starter_code: questionData.starter_code,
-            visible_tests: questionData.visible_tests,
-          };
+          codingQuestion = parseCodingQuestion(questionData);
         }
       }
 
@@ -66,7 +91,7 @@ export async function GET(
       if (questionError) {
         console.error('Error fetching associated coding question:', questionError);
       } else if (questionData) {
-        codingQuestion = questionData;
+        codingQuestion = parseCodingQuestion(questionData);
       }
     }
 
