@@ -355,7 +355,7 @@ ${JSON.stringify(parsedResume)}`;
       log.anomaly_flags = anomalyFlags;
     }
   } else {
-    // Select-then-upsert for skill passport
+    // Select-then-upsert for SkillForge scorecard
     const { data: existingPassport } = await supabaseAdmin
       .from('skill_passports')
       .select('id')

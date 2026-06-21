@@ -24,7 +24,7 @@ export default function ProcessingPage({ params }: ProcessingPageProps) {
             <Award className="h-5 w-5 text-slate-950" />
           </div>
           <span className="text-base font-bold tracking-tight bg-gradient-to-r from-teal-200 to-slate-100 bg-clip-text text-transparent">
-            SkillPassport
+            SkillForge
           </span>
         </div>
       </header>

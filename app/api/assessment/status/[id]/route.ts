@@ -53,17 +53,20 @@ export async function GET(
       }
 
       let codingQuestion = null;
-      if (assessment.status === 'in_progress') {
+      let codeSubmission = null;
+      if (assessment.status === 'in_progress' || assessment.status === 'completed' || assessment.status === 'processing') {
         const questionData = mockMemoryDb.codingQuestions.get(id);
         if (questionData) {
           codingQuestion = parseCodingQuestion(questionData);
         }
+        codeSubmission = mockMemoryDb.codeSubmissions.get(id) || null;
       }
 
       return Response.json({
         status: assessment.status,
         error_message: assessment.error_message,
         codingQuestion,
+        codeSubmission,
       });
     }
 
@@ -79,9 +82,9 @@ export async function GET(
     }
 
     let codingQuestion = null;
+    let codeSubmission = null;
 
-    // If assessment is in progress, also retrieve the coding question details securely
-    if (assessment.status === 'in_progress') {
+    if (assessment.status === 'in_progress' || assessment.status === 'completed' || assessment.status === 'processing') {
       const { data: questionData, error: questionError } = await supabaseAdmin
         .from('coding_questions')
         .select('language, title, description, starter_code, visible_tests')
@@ -93,12 +96,21 @@ export async function GET(
       } else if (questionData) {
         codingQuestion = parseCodingQuestion(questionData);
       }
+
+      const { data: submissionData } = await supabaseAdmin
+        .from('code_submissions')
+        .select('code, language')
+        .eq('assessment_id', id)
+        .maybeSingle();
+      
+      codeSubmission = submissionData || null;
     }
 
     return Response.json({
       status: assessment.status,
       error_message: assessment.error_message,
       codingQuestion,
+      codeSubmission,
     });
   } catch (error: any) {
     console.error('API assessment status error:', error);

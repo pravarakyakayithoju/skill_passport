@@ -8,7 +8,7 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 const outfit = Outfit({ subsets: ["latin"], variable: "--font-heading" });
 
 export const metadata: Metadata = {
-  title: "Skill Passport — AI-Powered Assessment Platform",
+  title: "SkillForge — AI-Powered Assessment Platform",
   description: "Upload your resume, take a dynamically tailored assessment with live coding, adaptive MCQs, and explanation videos, and get a verified competency scorecard.",
 };
 

@@ -62,7 +62,7 @@ export async function GET(
       });
     }
 
-    // 1. Fetch the Skill Passport record
+    // 1. Fetch the SkillForge record
     const { data: passport, error: passportError } = await supabaseAdmin
       .from('skill_passports')
       .select('*')
@@ -71,7 +71,7 @@ export async function GET(
 
     if (passportError || !passport) {
       console.error('Error fetching passport:', passportError);
-      return Response.json({ error: 'Skill passport not generated or not found' }, { status: 404 });
+      return Response.json({ error: 'SkillForge scorecard not generated or not found' }, { status: 404 });
     }
 
     // 2. Fetch candidate metadata from assessments table

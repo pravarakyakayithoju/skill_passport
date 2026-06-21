@@ -53,7 +53,7 @@ export default function ScoreRing({ score, size = 180, strokeWidth = 14 }: Score
           {score.toFixed(1)}
         </span>
         <span className="text-[10px] tracking-widest font-mono text-teal-400 font-bold uppercase mt-1">
-          PASSPORT SCORE
+          FORGE SCORE
         </span>
       </div>
     </div>

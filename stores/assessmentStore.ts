@@ -9,6 +9,9 @@ interface AssessmentState {
   tempId: string | null;
   fileUrl: string | null;
 
+  proctoringStream: MediaStream | null;
+  violationsCount: number;
+
   // Set resume extraction results
   setResumeData: (data: {
     skills: string[];
@@ -21,6 +24,9 @@ interface AssessmentState {
   // Setters
   setAssessmentId: (id: string | null) => void;
   setCandidateName: (name: string) => void;
+  setProctoringStream: (stream: MediaStream | null) => void;
+  setViolationsCount: (count: number) => void;
+  incrementViolations: () => void;
   reset: () => void;
 }
 
@@ -32,6 +38,8 @@ export const useAssessmentStore = create<AssessmentState>((set) => ({
   parsedData: null,
   tempId: null,
   fileUrl: null,
+  proctoringStream: null,
+  violationsCount: 0,
 
   setResumeData: (data) => set({
     extractedSkills: data.skills,
@@ -44,6 +52,9 @@ export const useAssessmentStore = create<AssessmentState>((set) => ({
   
   setAssessmentId: (id) => set({ assessmentId: id }),
   setCandidateName: (name) => set({ candidateName: name }),
+  setProctoringStream: (stream) => set({ proctoringStream: stream }),
+  setViolationsCount: (count) => set({ violationsCount: count }),
+  incrementViolations: () => set((state) => ({ violationsCount: state.violationsCount + 1 })),
   
   reset: () => set({
     assessmentId: null,
@@ -53,5 +64,7 @@ export const useAssessmentStore = create<AssessmentState>((set) => ({
     parsedData: null,
     tempId: null,
     fileUrl: null,
+    proctoringStream: null,
+    violationsCount: 0,
   }),
 }));

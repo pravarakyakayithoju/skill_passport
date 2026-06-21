@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, Play, ChevronRight, Check, X, AlertTriangle } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface TestResult {
   input: string;
@@ -40,6 +41,20 @@ export default function CodeEditor({
   const [runError, setRunError] = useState<string | null>(null);
   const [isSandboxDisabled, setIsSandboxDisabled] = useState(false);
   const [sandboxType, setSandboxType] = useState<'judge0' | 'llm' | 'none'>('judge0');
+
+  const handleEditorDidMount = (editor: any, monaco: any) => {
+    editor.onKeyDown((e: any) => {
+      const isCopy = (e.ctrlKey || e.metaKey) && e.keyCode === monaco.KeyCode.KeyC;
+      const isPaste = (e.ctrlKey || e.metaKey) && e.keyCode === monaco.KeyCode.KeyV;
+      const isCut = (e.ctrlKey || e.metaKey) && e.keyCode === monaco.KeyCode.KeyX;
+      
+      if (isCopy || isPaste || isCut) {
+        e.preventDefault();
+        e.stopPropagation();
+        toast.warning('Copy, cut, and paste actions are disabled in the editor.');
+      }
+    });
+  };
 
   const handleRunCode = async () => {
     setIsRunning(true);
@@ -104,7 +119,12 @@ export default function CodeEditor({
       <div className="lg:col-span-7 flex flex-col h-full space-y-4 overflow-hidden">
         
         {/* Editor Container */}
-        <div className="flex-1 min-h-[300px] border border-slate-800 rounded-xl overflow-hidden bg-[#1e1e1e] relative shadow-lg">
+        <div 
+          className="flex-1 min-h-[300px] border border-slate-800 rounded-xl overflow-hidden bg-[#1e1e1e] relative shadow-lg"
+          onCopy={(e) => { e.preventDefault(); toast.warning('Copying is disabled during this assessment.'); }}
+          onCut={(e) => { e.preventDefault(); toast.warning('Cutting is disabled during this assessment.'); }}
+          onPaste={(e) => { e.preventDefault(); toast.warning('Pasting is disabled during this assessment.'); }}
+        >
           <div className="absolute top-2 right-4 z-10 flex items-center space-x-2 bg-slate-950/80 border border-slate-800 rounded-md px-2.5 py-1 text-xs text-slate-400 font-mono">
             <span className="h-1.5 w-1.5 rounded-full bg-teal-400 animate-pulse" />
             <span className="capitalize">{language}</span>
@@ -116,6 +136,7 @@ export default function CodeEditor({
             theme="vs-dark"
             value={code}
             onChange={(val) => setCode(val || '')}
+            onMount={handleEditorDidMount}
             options={{
               minimap: { enabled: false },
               fontSize: 14,
@@ -125,6 +146,7 @@ export default function CodeEditor({
               cursorBlinking: 'smooth',
               cursorSmoothCaretAnimation: 'on',
               padding: { top: 16 },
+              contextmenu: false,
             }}
           />
         </div>

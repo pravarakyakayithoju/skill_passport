@@ -3,6 +3,7 @@
 import React, { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAssessmentStore } from '@/stores/assessmentStore';
+import ProctoringSetup from '@/components/assessment/ProctoringSetup';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -14,9 +15,10 @@ import { Upload, FileText, CheckCircle, Loader2, AlertCircle, Play } from 'lucid
 
 export default function ResumeUpload() {
   const router = useRouter();
-  const { setResumeData, setAssessmentId } = useAssessmentStore();
+  const { setResumeData, setAssessmentId, setProctoringStream } = useAssessmentStore();
 
   const [name, setName] = useState('');
+  const [showProctoringSetup, setShowProctoringSetup] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [status, setStatus] = useState<'idle' | 'uploading' | 'parsed' | 'provisioning' | 'failed'>('idle');
@@ -125,7 +127,10 @@ export default function ResumeUpload() {
     }
   };
 
-  const handleBeginAssessment = async () => {
+  const startAssessmentAfterProctoring = async (stream: MediaStream) => {
+    setShowProctoringSetup(false);
+    setProctoringStream(stream);
+
     if (!tempId) return;
 
     try {
@@ -198,21 +203,26 @@ export default function ResumeUpload() {
     }
   };
 
+  const handleBeginAssessment = async () => {
+    if (!tempId) return;
+    setShowProctoringSetup(true);
+  };
+
   return (
-    <Card className="w-full bg-slate-900/60 border-slate-800 backdrop-blur-xl text-slate-100 overflow-hidden shadow-2xl relative">
+    <Card className="w-full glass-card text-slate-100 overflow-hidden shadow-2xl relative border-slate-800/80">
       <div className="absolute inset-0 bg-gradient-to-br from-teal-500/5 via-transparent to-indigo-500/5 pointer-events-none" />
       <CardContent className="p-8">
         <div className="space-y-6">
           {/* Name Field */}
           <div className="space-y-2">
-            <Label htmlFor="candidate-name" className="text-slate-300 font-medium">Candidate Name (Optional)</Label>
+            <Label htmlFor="candidate-name" className="text-slate-350 font-medium">Candidate Name (Optional)</Label>
             <Input
               id="candidate-name"
               placeholder="e.g. Alex Mercer"
               value={name}
               onChange={(e) => setName(e.target.value)}
               disabled={status === 'uploading' || status === 'provisioning'}
-              className="bg-slate-950/80 border-slate-800 text-slate-100 focus-visible:ring-teal-500 focus-visible:ring-offset-slate-950"
+              className="bg-slate-950/90 border-slate-800 text-slate-100 focus-visible:ring-teal-500 focus-visible:ring-offset-slate-950"
             />
           </div>
 
@@ -225,8 +235,8 @@ export default function ResumeUpload() {
               onClick={() => fileInputRef.current?.click()}
               className={`border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-all duration-300 ${
                 isDragOver
-                  ? 'border-teal-400 bg-teal-500/10 shadow-[0_0_20px_rgba(20,184,166,0.15)]'
-                  : 'border-slate-800 bg-slate-950/40 hover:border-slate-700 hover:bg-slate-950/70'
+                  ? 'border-teal-450 bg-teal-500/10 shadow-[0_0_30px_rgba(20,184,166,0.2)]'
+                  : 'border-slate-800 bg-slate-950/60 hover:border-teal-500/35 hover:bg-slate-950/95 hover:shadow-[0_0_25px_rgba(20,184,166,0.08)]'
               }`}
             >
               <input
@@ -352,6 +362,12 @@ export default function ResumeUpload() {
           )}
         </div>
       </CardContent>
+      {showProctoringSetup && (
+        <ProctoringSetup 
+          onStart={startAssessmentAfterProctoring} 
+          onClose={() => setShowProctoringSetup(false)} 
+        />
+      )}
     </Card>
   );
 }

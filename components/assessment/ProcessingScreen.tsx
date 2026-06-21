@@ -20,7 +20,7 @@ const STEPS = [
   { time: 14, text: 'Analyzing speech-to-code logic coherence patterns...' },
   { time: 18, text: 'Cross-verifying resume skill trees against evaluation logs...' },
   { time: 22, text: 'Calculating aggregate final scores and confidence levels...' },
-  { time: 26, text: 'Finalizing verified Skill Passport certificate...' }
+  { time: 26, text: 'Finalizing verified SkillForge certificate...' }
 ];
 
 export default function ProcessingScreen({ assessmentId }: ProcessingScreenProps) {
@@ -54,7 +54,7 @@ export default function ProcessingScreen({ assessmentId }: ProcessingScreenProps
         if (data.status === 'completed') {
           clearInterval(timer);
           clearInterval(statusPoll);
-          toast.success('Skill Passport generated!');
+          toast.success('SkillForge generated!');
           router.push(`/assessment/${assessmentId}/passport`);
         } else if (data.status === 'failed') {
           clearInterval(timer);

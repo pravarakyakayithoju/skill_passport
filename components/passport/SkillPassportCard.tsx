@@ -42,7 +42,7 @@ export default function SkillPassportCard({
   const handleDownloadReport = () => {
     // Basic mock action for downloading passport details
     window.print();
-    toast.success('Opening print dialog for Skill Passport report...');
+    toast.success('Opening print dialog for SkillForge scorecard report...');
   };
 
   return (
@@ -91,7 +91,7 @@ export default function SkillPassportCard({
                 className="bg-slate-950 border-slate-800 hover:bg-slate-900 text-slate-300 font-semibold flex items-center"
               >
                 <FileDown className="h-4 w-4 mr-1.5 text-teal-400" />
-                <span>Export Passport</span>
+                <span>Export Scorecard</span>
               </Button>
             </div>
           </div>
@@ -142,7 +142,7 @@ export default function SkillPassportCard({
           {/* Skills Badges */}
           <div className="space-y-2.5 text-left border-t border-slate-900 pt-6">
             <h3 className="text-xs uppercase tracking-widest font-mono text-slate-500 font-bold">
-              Verified Passport Skills
+              Verified SkillForge Skills
             </h3>
             <div className="flex flex-wrap gap-2">
               {verifiedSkills.map((skill: string, index: number) => (

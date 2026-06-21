@@ -128,18 +128,24 @@ ${rawText}`;
     });
 
     // Clean primary skill and make sure it is in lowercase for matching
-    const primarySkill = (parsedData.primary_skill || parsedData.skills[0] || 'javascript').toLowerCase();
-    const skills = parsedData.skills.map(s => s.toLowerCase());
+    const skills = Array.isArray(parsedData?.skills)
+      ? parsedData.skills.map(s => String(s).toLowerCase().trim())
+      : [];
+    const primarySkill = String(parsedData?.primary_skill || skills[0] || 'javascript').toLowerCase().trim();
 
     // Upload to Supabase Storage
     const tempId = crypto.randomUUID();
-    const filePath = `${tempId}/${file.name}`;
+    const filePath = `${tempId}/resume.pdf`;
     
     if (MOCK) {
       return Response.json({
         skills,
         primary_skill: primarySkill,
-        parsed_data: parsedData,
+        parsed_data: {
+          ...parsedData,
+          skills,
+          primary_skill: primarySkill
+        },
         tempId,
         file_url: `resumes/mock/${filePath}`,
         raw_text: rawText
@@ -151,7 +157,7 @@ ${rawText}`;
     const { error: uploadError } = await supabaseAdmin.storage
       .from('resumes')
       .upload(filePath, buffer, {
-        contentType: file.type || 'application/pdf',
+        contentType: 'application/pdf',
         upsert: false
       });
 
@@ -163,7 +169,11 @@ ${rawText}`;
     return Response.json({
       skills,
       primary_skill: primarySkill,
-      parsed_data: parsedData,
+      parsed_data: {
+        ...parsedData,
+        skills,
+        primary_skill: primarySkill
+      },
       tempId,
       file_url: filePath,
       raw_text: rawText

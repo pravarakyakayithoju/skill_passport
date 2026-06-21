@@ -9,6 +9,7 @@ import KeystrokeLogger from '@/components/assessment/KeystrokeLogger';
 import { Badge } from '@/components/ui/badge';
 import { Layers, Terminal } from 'lucide-react';
 import { toast } from 'sonner';
+import ProctoringMonitor from '@/components/assessment/ProctoringMonitor';
 
 interface MCQPageProps {
   params: { id: string };
@@ -36,6 +37,7 @@ export default function MCQPage({ params }: MCQPageProps) {
 
       {/* Telemetry Logger */}
       <KeystrokeLogger assessmentId={assessmentId} />
+      <ProctoringMonitor assessmentId={assessmentId} />
 
       {/* Header bar */}
       <header className="flex flex-col md:flex-row items-start md:items-center justify-between border-b border-slate-900 pb-4 mb-8 gap-4 z-10 w-full max-w-4xl mx-auto">

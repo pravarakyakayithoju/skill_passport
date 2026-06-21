@@ -26,7 +26,7 @@ export default function PassportPage({ params }: PassportPageProps) {
       try {
         const res = await fetch(`/api/passport/${assessmentId}`);
         if (!res.ok) {
-          throw new Error('Failed to retrieve skill passport details');
+          throw new Error('Failed to retrieve SkillForge scorecard details');
         }
 
         const data = await res.json();
@@ -35,7 +35,7 @@ export default function PassportPage({ params }: PassportPageProps) {
         setResumeUrl(data.resumeUrl || '');
       } catch (err: any) {
         console.error(err);
-        toast.error(err.message || 'Error loading Skill Passport.');
+        toast.error(err.message || 'Error loading SkillForge scorecard.');
         router.push('/');
       } finally {
         setIsLoading(false);
@@ -67,7 +67,7 @@ export default function PassportPage({ params }: PassportPageProps) {
             <Award className="h-5 w-5 text-slate-950" />
           </div>
           <span className="text-base font-bold tracking-tight bg-gradient-to-r from-teal-200 to-slate-100 bg-clip-text text-transparent">
-            SkillPassport
+            SkillForge
           </span>
         </div>
         
@@ -85,9 +85,9 @@ export default function PassportPage({ params }: PassportPageProps) {
       {/* Main Passport Card Container */}
       <div className="flex-1 flex flex-col justify-center items-center w-full z-10 max-w-4xl pb-12 space-y-4">
         <div className="text-center space-y-2 mb-2">
-          <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight">Verified Candidate Skill Passport</h1>
+          <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight">Verified Candidate SkillForge Scorecard</h1>
           <p className="text-slate-500 text-sm max-w-md mx-auto">
-            This passport is fully audited, backed by automated Judge0 compile logs, voice explanation checks, and telemetry logs.
+            This scorecard is fully audited, backed by automated Judge0 compile logs, voice explanation checks, and telemetry logs.
           </p>
         </div>
 
@@ -102,7 +102,7 @@ export default function PassportPage({ params }: PassportPageProps) {
 
       {/* Footer */}
       <footer className="w-full text-center text-xs text-slate-600 z-10 max-w-4xl border-t border-slate-900 py-4">
-        Secure SHA-256 Verified Skill Passport • Cryptographic ID: <span className="font-mono text-slate-500">{assessmentId}</span>
+        Secure SHA-256 Verified SkillForge Scorecard • Cryptographic ID: <span className="font-mono text-slate-500">{assessmentId}</span>
       </footer>
     </main>
   );

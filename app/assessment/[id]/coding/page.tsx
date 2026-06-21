@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Code2, Award, Terminal } from 'lucide-react';
 import { toast } from 'sonner';
+import ProctoringMonitor from '@/components/assessment/ProctoringMonitor';
 
 // Monaco editor wrapper loaded with ssr:false
 const CodeEditor = dynamic(() => import('@/components/assessment/CodeEditor'), {
@@ -152,6 +153,7 @@ export default function CodingPage({ params }: CodingPageProps) {
 
       {/* Telemetry Logger */}
       <KeystrokeLogger assessmentId={assessmentId} />
+      <ProctoringMonitor assessmentId={assessmentId} />
 
       {/* Header bar */}
       <header className="flex flex-col md:flex-row items-start md:items-center justify-between border-b border-slate-900 pb-4 mb-6 gap-4 z-10">
