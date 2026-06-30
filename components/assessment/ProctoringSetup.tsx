@@ -23,6 +23,7 @@ export default function ProctoringSetup({ onStart, onClose }: ProctoringSetupPro
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animationFrameRef = useRef<number | null>(null);
+  const startedRef = useRef(false);
 
   // Monitor fullscreen change
   useEffect(() => {
@@ -93,8 +94,8 @@ export default function ProctoringSetup({ onStart, onClose }: ProctoringSetupPro
   useEffect(() => {
     return () => {
       // If we exit setup without starting, stop stream
-      if (stream) {
-        // We only stop it if it's not being actively saved/transferred
+      if (stream && !startedRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
       }
     };
   }, [stream]);
@@ -149,15 +150,22 @@ export default function ProctoringSetup({ onStart, onClose }: ProctoringSetupPro
     toast.info('Bypass mode active. Simulated device streams loaded.');
   };
 
-  const handleBegin = () => {
-    if (!fullscreenActive) {
-      toast.warning('Please enter fullscreen mode before starting the assessment.');
-      return;
-    }
-
+  const handleBegin = async () => {
     if (!stream && !isSimulated) {
       toast.warning('Please authorize camera and microphone permissions to proceed.');
       return;
+    }
+
+    // Automatically enter fullscreen on direct user click (gesture context is valid)
+    if (!document.fullscreenElement) {
+      try {
+        await document.documentElement.requestFullscreen();
+        setFullscreenActive(true);
+      } catch (err) {
+        console.error('Fullscreen request failed during begin click:', err);
+        toast.error('Browser blocked auto-fullscreen. Please use the fullscreen button.');
+        return;
+      }
     }
 
     // Create a mock stream if bypassed, or pass the active stream
@@ -175,6 +183,7 @@ export default function ProctoringSetup({ onStart, onClose }: ProctoringSetupPro
       activeStream = canvas.captureStream(5);
     }
 
+    startedRef.current = true;
     onStart(activeStream);
   };
 
@@ -206,36 +215,7 @@ export default function ProctoringSetup({ onStart, onClose }: ProctoringSetupPro
                 To guarantee candidate integrity, this assessment utilizes automated proctoring. You must grant camera, microphone, and fullscreen permissions.
               </p>
 
-              {/* Requirement 1: Fullscreen */}
-              <div className={`p-4 rounded-xl border flex flex-col space-y-3 transition-all duration-300 ${
-                fullscreenActive
-                  ? 'bg-emerald-500/5 border-emerald-500/20 text-emerald-300'
-                  : 'bg-slate-950/40 border-slate-800 text-slate-300'
-              }`}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <Maximize className={`h-5 w-5 ${fullscreenActive ? 'text-emerald-400' : 'text-slate-400'}`} />
-                    <span className="font-semibold text-sm">1. Fullscreen Access</span>
-                  </div>
-                  {fullscreenActive ? (
-                    <CheckCircle2 className="h-5 w-5 text-emerald-400" />
-                  ) : (
-                    <span className="h-2 w-2 rounded-full bg-amber-500 animate-ping" />
-                  )}
-                </div>
-                {!fullscreenActive && (
-                  <Button
-                    onClick={handleRequestFullscreen}
-                    size="sm"
-                    className="w-full bg-slate-800 hover:bg-slate-700 text-slate-100 font-semibold text-xs border border-slate-700/50"
-                  >
-                    Enter Fullscreen Mode
-                  </Button>
-                )}
-                {fullscreenActive && (
-                  <p className="text-[10px] text-emerald-400 font-medium">Fullscreen mode active. Do not exit until the end.</p>
-                )}
-              </div>
+
 
               {/* Requirement 2: Camera & Mic */}
               <div className={`p-4 rounded-xl border flex flex-col space-y-3 transition-all duration-300 ${
@@ -347,7 +327,7 @@ export default function ProctoringSetup({ onStart, onClose }: ProctoringSetupPro
               </Button>
               <Button
                 onClick={handleBegin}
-                disabled={!fullscreenActive || permissionStatus !== 'granted'}
+                disabled={permissionStatus !== 'granted'}
                 className="flex-[2] bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-400 hover:to-emerald-500 text-slate-950 font-bold"
               >
                 Start Assessment

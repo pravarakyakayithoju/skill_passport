@@ -19,10 +19,7 @@ export default function Home() {
             SkillForge
           </span>
         </div>
-        <div className="flex items-center space-x-2 text-xs bg-slate-900/80 border border-slate-800 rounded-full px-3 py-1 text-slate-400">
-          <Cpu className="h-4 w-4 text-teal-400 animate-pulse" />
-          <span>Powered by GPT-4o & Judge0</span>
-        </div>
+
       </header>
 
       {/* Body Content */}

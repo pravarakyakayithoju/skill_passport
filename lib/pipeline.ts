@@ -100,7 +100,11 @@ export async function runPipeline(assessmentId: string): Promise<void> {
   let passRate = 0;
   let testResultsData = null;
 
-  if (code && hiddenTests.length > 0) {
+  const trimmedCode = code.replace(/\s+/g, '');
+  const trimmedStarter = starterCode.replace(/\s+/g, '');
+  const isEmptyOrStarter = !trimmedCode || trimmedCode === trimmedStarter;
+
+  if (!isEmptyOrStarter && code && hiddenTests.length > 0) {
     const judge0Results = await runHiddenTests(code, language, hiddenTests, starterCode);
     passRate = judge0Results.total > 0 ? judge0Results.passed / judge0Results.total : 0;
     testResultsData = judge0Results.results;
@@ -120,17 +124,33 @@ export async function runPipeline(assessmentId: string): Promise<void> {
         })
         .eq('assessment_id', assessmentId);
     }
+  } else if (isEmptyOrStarter) {
+    // Save zero score to database
+    if (MOCK) {
+      const sub = mockMemoryDb.codeSubmissions.get(assessmentId) || {};
+      sub.test_results = [];
+      sub.score = 0;
+      mockMemoryDb.codeSubmissions.set(assessmentId, sub);
+    } else {
+      await supabaseAdmin
+        .from('code_submissions')
+        .update({
+          test_results: [],
+          score: 0,
+        })
+        .eq('assessment_id', assessmentId);
+    }
   }
 
   // 4. Code quality analysis via GPT-4o
   let codeAnalysis: CodeAnalysisResult = {
     score: 0,
     complexity: 'N/A',
-    readability: 'No code submitted',
-    issues: ['No code submitted']
+    readability: 'No code submitted or unmodified starter template.',
+    issues: ['No implementation provided.']
   };
 
-  if (code) {
+  if (!isEmptyOrStarter && code) {
     if (!MOCK_AI) {
       const prompt = `Rate this ${language} programming code from 0 to 100.
 Return JSON matching schema:
@@ -157,6 +177,17 @@ ${code}`;
       }
     } else {
       codeAnalysis = MOCK_CODE_ANALYSIS;
+    }
+  } else if (isEmptyOrStarter) {
+    if (MOCK) {
+      const sub = mockMemoryDb.codeSubmissions.get(assessmentId) || {};
+      sub.ai_code_analysis = codeAnalysis;
+      mockMemoryDb.codeSubmissions.set(assessmentId, sub);
+    } else {
+      await supabaseAdmin
+        .from('code_submissions')
+        .update({ ai_code_analysis: codeAnalysis })
+        .eq('assessment_id', assessmentId);
     }
   }
 
@@ -299,7 +330,7 @@ ${JSON.stringify(parsedResume)}`;
   }
 
   // Calculate composite passport scores
-  const codeScore = passRate * 60 + codeAnalysis.score * 0.4;
+  const codeScore = isEmptyOrStarter ? 0 : (passRate * 60 + codeAnalysis.score * 0.4);
   const explanationScore = explanationAnalysis.score;
   const resumeScore = resumeAnalysis.score;
 

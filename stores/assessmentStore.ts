@@ -52,19 +52,29 @@ export const useAssessmentStore = create<AssessmentState>((set) => ({
   
   setAssessmentId: (id) => set({ assessmentId: id }),
   setCandidateName: (name) => set({ candidateName: name }),
-  setProctoringStream: (stream) => set({ proctoringStream: stream }),
+  setProctoringStream: (stream) => set((state) => {
+    if (state.proctoringStream && state.proctoringStream !== stream) {
+      state.proctoringStream.getTracks().forEach((track) => track.stop());
+    }
+    return { proctoringStream: stream };
+  }),
   setViolationsCount: (count) => set({ violationsCount: count }),
   incrementViolations: () => set((state) => ({ violationsCount: state.violationsCount + 1 })),
   
-  reset: () => set({
-    assessmentId: null,
-    candidateName: '',
-    primarySkill: '',
-    extractedSkills: [],
-    parsedData: null,
-    tempId: null,
-    fileUrl: null,
-    proctoringStream: null,
-    violationsCount: 0,
+  reset: () => set((state) => {
+    if (state.proctoringStream) {
+      state.proctoringStream.getTracks().forEach((track) => track.stop());
+    }
+    return {
+      assessmentId: null,
+      candidateName: '',
+      primarySkill: '',
+      extractedSkills: [],
+      parsedData: null,
+      tempId: null,
+      fileUrl: null,
+      proctoringStream: null,
+      violationsCount: 0,
+    };
   }),
 }));

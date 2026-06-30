@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAssessmentStore } from '@/stores/assessmentStore';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -25,10 +26,16 @@ const STEPS = [
 
 export default function ProcessingScreen({ assessmentId }: ProcessingScreenProps) {
   const router = useRouter();
+  const resetStore = useAssessmentStore((state) => state.reset);
   const [currentStepText, setCurrentStepText] = useState(STEPS[0].text);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [status, setStatus] = useState<'processing' | 'failed'>('processing');
   const [errorMessage, setErrorMessage] = useState('');
+
+  // Reset store and stop stream tracks on mount
+  useEffect(() => {
+    resetStore();
+  }, [resetStore]);
 
   useEffect(() => {
     // 1. Tick up elapsed time to cycle steps text
@@ -54,6 +61,11 @@ export default function ProcessingScreen({ assessmentId }: ProcessingScreenProps
         if (data.status === 'completed') {
           clearInterval(timer);
           clearInterval(statusPoll);
+          
+          if (typeof document !== 'undefined' && document.fullscreenElement) {
+            document.exitFullscreen().catch((err) => console.error('Failed to exit fullscreen:', err));
+          }
+
           toast.success('SkillForge generated!');
           router.push(`/assessment/${assessmentId}/passport`);
         } else if (data.status === 'failed') {

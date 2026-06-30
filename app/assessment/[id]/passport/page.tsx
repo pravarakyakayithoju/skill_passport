@@ -22,6 +22,12 @@ export default function PassportPage({ params }: PassportPageProps) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    if (typeof document !== 'undefined' && document.fullscreenElement) {
+      document.exitFullscreen().catch((err) => console.error('Failed to exit fullscreen:', err));
+    }
+  }, []);
+
+  useEffect(() => {
     const fetchPassport = async () => {
       try {
         const res = await fetch(`/api/passport/${assessmentId}`);

@@ -12,9 +12,28 @@ interface ProctoringMonitorProps {
   assessmentId: string;
 }
 
+// Helper to load dynamic external scripts from CDN
+const loadScript = (src: string): Promise<boolean> => {
+  return new Promise((resolve, reject) => {
+    if (typeof window === 'undefined') {
+      resolve(false);
+      return;
+    }
+    if (document.querySelector(`script[src="${src}"]`)) {
+      resolve(true);
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = src;
+    script.onload = () => resolve(true);
+    script.onerror = () => reject(new Error(`Failed to load script ${src}`));
+    document.head.appendChild(script);
+  });
+};
+
 export default function ProctoringMonitor({ assessmentId }: ProctoringMonitorProps) {
   const router = useRouter();
-  
+
   // Zustand State
   const proctoringStream = useAssessmentStore((state) => state.proctoringStream);
   const setProctoringStream = useAssessmentStore((state) => state.setProctoringStream);
@@ -22,7 +41,7 @@ export default function ProctoringMonitor({ assessmentId }: ProctoringMonitorPro
   const incrementViolations = useAssessmentStore((state) => state.incrementViolations);
 
   const videoRef = useRef<HTMLVideoElement>(null);
-  
+
   // Local UI State
   const [showWarningModal, setShowWarningModal] = useState(false);
   const [showRestoreOverlay, setShowRestoreOverlay] = useState(false);
@@ -30,11 +49,33 @@ export default function ProctoringMonitor({ assessmentId }: ProctoringMonitorPro
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [isBypassed, setIsBypassed] = useState(false);
 
+  const localStreamRef = useRef<MediaStream | null>(null);
+  const showWarningModalRef = useRef(showWarningModal);
+  const showRestoreOverlayRef = useRef(showRestoreOverlay);
+
+  useEffect(() => {
+    showWarningModalRef.current = showWarningModal;
+  }, [showWarningModal]);
+
+  useEffect(() => {
+    showRestoreOverlayRef.current = showRestoreOverlay;
+  }, [showRestoreOverlay]);
+
+  // Face Detection State
+  const [model, setModel] = useState<any>(null);
+  const [modelLoading, setModelLoading] = useState(true);
+  const [activeViolation, setActiveViolation] = useState<string>('');
+
+  const resetStore = useAssessmentStore((state) => state.reset);
+
   // Set the video stream to the video element
   useEffect(() => {
     const activeStream = proctoringStream || localStream;
     if (activeStream && videoRef.current) {
       videoRef.current.srcObject = activeStream;
+      videoRef.current.play().catch((err) => {
+        console.warn('Video element play failed, trying to play on user interaction:', err);
+      });
     }
   }, [proctoringStream, localStream]);
 
@@ -44,6 +85,48 @@ export default function ProctoringMonitor({ assessmentId }: ProctoringMonitorPro
       setShowRestoreOverlay(true);
     }
   }, [proctoringStream]);
+
+  // Load TensorFlow.js and BlazeFace dynamically on mount
+  useEffect(() => {
+    let active = true;
+    const loadFaceDetection = async () => {
+      try {
+        setModelLoading(true);
+        if (!(window as any).tf) {
+          await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0/dist/tf.min.js');
+        }
+        if (!(window as any).blazeface) {
+          await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface@0.1.0/dist/blazeface.min.js');
+        }
+        if (!active) return;
+
+        // Force CPU backend for maximum compatibility across devices (headless browsers, virtual machines)
+        try {
+          await (window as any).tf.setBackend('cpu');
+        } catch (backendErr) {
+          console.warn('Unable to explicitly set tfjs CPU backend:', backendErr);
+        }
+
+        const loadedModel = await (window as any).blazeface.load();
+        if (active) {
+          setModel(loadedModel);
+          setModelLoading(false);
+          toast.success('Face proctoring system active.');
+        }
+      } catch (err) {
+        console.error('Failed to load face detection model:', err);
+        if (active) {
+          setModelLoading(false);
+          toast.error('Face detection model failed to load. Proctoring might be reduced.');
+        }
+      }
+    };
+
+    loadFaceDetection();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // Telemetry event logging to the backend
   const logTelemetryEvent = async (type: string, details: string = '') => {
@@ -64,16 +147,24 @@ export default function ProctoringMonitor({ assessmentId }: ProctoringMonitorPro
     }
   };
 
+
+
   // Terminate assessment API call
-  const terminateAssessment = async (reason: string) => {
+  const terminateAssessment = useCallback(async (reason: string) => {
     try {
+      // Exit fullscreen mode if active
+      if (document.fullscreenElement) {
+        await document.exitFullscreen().catch((err) => console.error('Failed to exit fullscreen:', err));
+      }
+
       // Clear tracks
-      const activeStream = proctoringStream || localStream;
+      const activeStream = useAssessmentStore.getState().proctoringStream || localStreamRef.current;
       if (activeStream) {
         activeStream.getTracks().forEach((track) => track.stop());
       }
       setProctoringStream(null);
       setLocalStream(null);
+      localStreamRef.current = null;
 
       await fetch('/api/assessment/terminate', {
         method: 'POST',
@@ -82,32 +173,66 @@ export default function ProctoringMonitor({ assessmentId }: ProctoringMonitorPro
       });
 
       toast.error('Assessment terminated due to repeated proctoring violations!');
-      router.push(`/assessment/${assessmentId}/terminated`);
+      
+      // Reset store and redirect back to initial resume uploading page
+      resetStore();
+      router.push('/');
     } catch (err) {
       console.error('Failed to terminate assessment:', err);
-      // Force redirect anyway
-      router.push(`/assessment/${assessmentId}/terminated`);
+      // Force redirect anyway and reset store
+      resetStore();
+      router.push('/');
     }
-  };
+  }, [setProctoringStream, assessmentId, resetStore, router]);
 
   // Shared Violation Handler
   const handleViolation = useCallback(async (violationType: string) => {
-    if (showWarningModal || showRestoreOverlay) return;
+    if (showWarningModalRef.current || showRestoreOverlayRef.current) return;
 
     incrementViolations();
-    const newViolationsCount = violationsCount + 1;
+    const newViolationsCount = useAssessmentStore.getState().violationsCount;
+    setActiveViolation(violationType);
 
     await logTelemetryEvent('proctoring_violation', `${violationType} (Violation count: ${newViolationsCount})`);
 
     if (newViolationsCount >= 3) {
-      // Third violation: Terminate assessment
-      await terminateAssessment(`Repeated proctoring violations: ${violationType}`);
+      // Third violation: Terminate assessment immediately and go to landing page
+      await terminateAssessment(violationType);
     } else {
       // First/Second violation: Show warning modal
       setShowWarningModal(true);
       toast.warning(`Proctoring alert: ${violationType.replace(/_/g, ' ')} detected!`);
     }
-  }, [violationsCount, showWarningModal, showRestoreOverlay, incrementViolations]);
+  }, [incrementViolations, terminateAssessment]);
+
+  // Violation Description Helper
+  const getViolationDescription = (type: string) => {
+    switch (type) {
+      case 'face_not_detected':
+        return 'No face was detected in the camera feed. Please ensure your face is fully visible to the camera.';
+      case 'multiple_faces_detected':
+        return 'Multiple faces were detected in the camera feed. Only one person is allowed in front of the camera during the assessment.';
+      case 'camera_covered_or_low_light':
+      case 'camera_covered':
+        return 'Your camera appears to be covered or in extremely low lighting conditions. Please uncover the camera or move to a brighter environment.';
+      case 'camera_turned_off':
+      case 'camera_turned_off_or_frozen':
+        return 'Your camera video feed appears to be turned off, muted, or frozen. The camera must remain active and streaming throughout the assessment.';
+      case 'loud_noise_detected':
+      case 'simulated_loud_noise':
+        return 'Loud or persistent background noise was detected. Please maintain a quiet testing environment.';
+      case 'tab_switch_hidden':
+        return 'You switched away from the assessment tab. Leaving the active assessment screen is strictly prohibited.';
+      case 'window_blur':
+        return 'The assessment window lost focus. Please remain active on the assessment window.';
+      case 'fullscreen_exit':
+        return 'You exited fullscreen mode. The assessment must be taken in fullscreen mode.';
+      case 'eye_contact_lost':
+        return 'Please maintain eye contact with the screen. Looking away or focusing elsewhere is not allowed.';
+      default:
+        return 'A security compliance violation was detected. Please adhere to the assessment guidelines.';
+    }
+  };
 
   // Visibility and Fullscreen listener
   useEffect(() => {
@@ -123,14 +248,14 @@ export default function ProctoringMonitor({ assessmentId }: ProctoringMonitorPro
     const handleBlur = () => {
       // Minor delay to check if blur was due to clicking a standard system modal
       setTimeout(() => {
-        if (!document.hasFocus() && !showWarningModal && !showRestoreOverlay) {
+        if (!document.hasFocus() && !showWarningModalRef.current && !showRestoreOverlayRef.current) {
           handleViolation('window_blur');
         }
       }, 300);
     };
 
     const handleFsChange = () => {
-      if (!document.fullscreenElement && !showWarningModal && !showRestoreOverlay) {
+      if (!document.fullscreenElement && !showWarningModalRef.current && !showRestoreOverlayRef.current) {
         handleViolation('fullscreen_exit');
       }
     };
@@ -144,7 +269,7 @@ export default function ProctoringMonitor({ assessmentId }: ProctoringMonitorPro
       window.removeEventListener('blur', handleBlur);
       document.removeEventListener('fullscreenchange', handleFsChange);
     };
-  }, [showRestoreOverlay, showWarningModal, handleViolation]);
+  }, [showRestoreOverlay, handleViolation]);
 
   // Audio Noise Level Monitoring
   useEffect(() => {
@@ -172,11 +297,11 @@ export default function ProctoringMonitor({ assessmentId }: ProctoringMonitorPro
       const dataArray = new Uint8Array(bufferLength);
 
       intervalId = setInterval(() => {
-        if (!analyser || showWarningModal || showRestoreOverlay) return;
-        
+        if (!analyser || showWarningModalRef.current || showRestoreOverlayRef.current) return;
+
         // Auto-resume AudioContext if suspended
         if (audioCtx && audioCtx.state === 'suspended') {
-          audioCtx.resume().catch(() => {});
+          audioCtx.resume().catch(() => { });
         }
 
         analyser.getByteTimeDomainData(dataArray);
@@ -208,16 +333,26 @@ export default function ProctoringMonitor({ assessmentId }: ProctoringMonitorPro
       console.error('Failed to initialize AudioContext analyzer:', e);
     }
 
+    const resumeAudio = () => {
+      if (audioCtx && audioCtx.state === 'suspended') {
+        audioCtx.resume().catch(() => { });
+      }
+    };
+    window.addEventListener('click', resumeAudio);
+    window.addEventListener('keydown', resumeAudio);
+
     return () => {
       if (intervalId) clearInterval(intervalId);
       if (source) source.disconnect();
+      window.removeEventListener('click', resumeAudio);
+      window.removeEventListener('keydown', resumeAudio);
       if (audioCtx && audioCtx.state !== 'closed') {
-        audioCtx.close().catch(() => {});
+        audioCtx.close().catch(() => { });
       }
     };
-  }, [proctoringStream, localStream, showWarningModal, showRestoreOverlay, isBypassed, handleViolation]);
+  }, [proctoringStream, localStream, showRestoreOverlay, isBypassed, handleViolation]);
 
-  // Camera cover & Face Presence Monitoring via Canvas
+  // Camera cover & Face Presence Monitoring via Canvas & BlazeFace
   useEffect(() => {
     const activeStream = proctoringStream || localStream;
     if (!activeStream || showRestoreOverlay || isBypassed) return;
@@ -227,25 +362,23 @@ export default function ProctoringMonitor({ assessmentId }: ProctoringMonitorPro
 
     let intervalId: NodeJS.Timeout | null = null;
     let consecutiveDarkSeconds = 0;
-
-    // Set up a hidden video element to read stream pixel data
-    const hiddenVideo = document.createElement('video');
-    hiddenVideo.srcObject = activeStream;
-    hiddenVideo.muted = true;
-    hiddenVideo.playsInline = true;
-    hiddenVideo.play().catch((e) => console.log('Hidden video play failed:', e));
+    let consecutiveAbsentSeconds = 0;
+    let consecutiveMultipleSeconds = 0;
+    let consecutiveNoEyeContactSeconds = 0;
 
     const canvas = document.createElement('canvas');
     canvas.width = 80;
     canvas.height = 60;
     const ctx = canvas.getContext('2d');
 
-    intervalId = setInterval(() => {
-      if (showWarningModal || showRestoreOverlay) return;
-      if (!ctx || !hiddenVideo.videoWidth) return;
+    intervalId = setInterval(async () => {
+      if (showWarningModalRef.current || showRestoreOverlayRef.current) return;
+      
+      const videoEl = videoRef.current;
+      if (!videoEl || !ctx || !videoEl.videoWidth || videoEl.paused) return;
 
       try {
-        ctx.drawImage(hiddenVideo, 0, 0, 80, 60);
+        ctx.drawImage(videoEl, 0, 0, 80, 60);
         const imgData = ctx.getImageData(0, 0, 80, 60);
         const data = imgData.data;
 
@@ -271,17 +404,81 @@ export default function ProctoringMonitor({ assessmentId }: ProctoringMonitorPro
         } else {
           consecutiveDarkSeconds = 0;
         }
+
+        // Face Presence & Multi-face Detection
+        if (model) {
+          const predictions = await model.estimateFaces(videoEl, false);
+          if (predictions.length === 0) {
+            consecutiveAbsentSeconds += 1;
+            consecutiveMultipleSeconds = 0;
+            consecutiveNoEyeContactSeconds = 0;
+            if (consecutiveAbsentSeconds >= 3) {
+              handleViolation('face_not_detected');
+              consecutiveAbsentSeconds = 0;
+            }
+          } else if (predictions.length > 1) {
+            consecutiveMultipleSeconds += 1;
+            consecutiveAbsentSeconds = 0;
+            consecutiveNoEyeContactSeconds = 0;
+            if (consecutiveMultipleSeconds >= 3) {
+              handleViolation('multiple_faces_detected');
+              consecutiveMultipleSeconds = 0;
+            }
+          } else {
+            consecutiveAbsentSeconds = 0;
+            consecutiveMultipleSeconds = 0;
+            
+            // Single face detected: Check eye contact / looking away direction
+            const prediction = predictions[0];
+            const landmarks = prediction.landmarks;
+            if (landmarks && landmarks.length >= 4) {
+              const rightEye = landmarks[0];
+              const leftEye = landmarks[1];
+              const nose = landmarks[2];
+              
+              const eyeDist = Math.abs(rightEye[0] - leftEye[0]);
+              if (eyeDist > 0) {
+                const noseX = nose[0];
+                const midX = (leftEye[0] + rightEye[0]) / 2;
+                const noseOffset = Math.abs(noseX - midX) / eyeDist;
+                
+                // Nose offset threshold: > 0.28 is considered looking away / eye contact lost
+                if (noseOffset > 0.28) {
+                  consecutiveNoEyeContactSeconds += 1;
+                  if (consecutiveNoEyeContactSeconds >= 5) {
+                    handleViolation('eye_contact_lost');
+                    consecutiveNoEyeContactSeconds = 0;
+                  }
+                } else {
+                  consecutiveNoEyeContactSeconds = 0;
+                }
+              }
+            } else {
+              consecutiveNoEyeContactSeconds = 0;
+            }
+          }
+        }
       } catch (e) {
-        // Suppress canvas security errors (e.g. cross-origin if stream isn't ready)
+        // Suppress canvas/loading security errors
       }
     }, 1000);
 
+    // Play listener helper to ensure video continues streaming if paused/suspended by browser
+    const playVideo = () => {
+      const videoEl = videoRef.current;
+      if (videoEl && videoEl.paused) {
+        videoEl.play().catch(() => {});
+      }
+    };
+    window.addEventListener('click', playVideo);
+    window.addEventListener('keydown', playVideo);
+
     return () => {
       if (intervalId) clearInterval(intervalId);
-      hiddenVideo.pause();
-      hiddenVideo.srcObject = null;
+      window.removeEventListener('click', playVideo);
+      window.removeEventListener('keydown', playVideo);
     };
-  }, [proctoringStream, localStream, showWarningModal, showRestoreOverlay, isBypassed, handleViolation]);
+  }, [proctoringStream, localStream, showRestoreOverlay, isBypassed, model, handleViolation]);
 
   // Handle restoring permissions on refresh
   const handleRestore = async () => {
@@ -300,6 +497,7 @@ export default function ProctoringMonitor({ assessmentId }: ProctoringMonitorPro
 
       setProctoringStream(userStream);
       setLocalStream(userStream);
+      localStreamRef.current = userStream;
       setShowRestoreOverlay(false);
       setIsBypassed(false);
       toast.success('Proctoring session restored successfully.');
@@ -324,6 +522,7 @@ export default function ProctoringMonitor({ assessmentId }: ProctoringMonitorPro
     const dummyStream = canvas.captureStream(5);
     setProctoringStream(dummyStream);
     setLocalStream(dummyStream);
+    localStreamRef.current = dummyStream;
     setShowRestoreOverlay(false);
     setIsBypassed(true);
     toast.info('Simulated proctoring session restored.');
@@ -345,19 +544,32 @@ export default function ProctoringMonitor({ assessmentId }: ProctoringMonitorPro
     <>
       {/* 1. Floating PiP Webcam Stream Widget */}
       {!showRestoreOverlay && (
-        <div className="fixed bottom-6 right-6 z-40 w-32 h-32 md:w-36 md:h-36 rounded-full border-2 border-teal-500/40 bg-slate-950 overflow-hidden shadow-2xl hover:scale-105 transition-all duration-300 group">
+        <div className="fixed bottom-6 right-6 z-40 w-32 h-32 md:w-36 md:h-36 rounded-full border-2 border-teal-500/40 bg-slate-950 overflow-hidden shadow-2xl hover:scale-105 transition-all duration-300 group flex items-center justify-center">
           <div className="absolute inset-0 bg-slate-900 flex items-center justify-center">
+            {/* The video element is hidden but active for streaming and canvas analysis */}
             <video
               ref={videoRef}
               autoPlay
               playsInline
               muted
-              className="w-full h-full object-cover transform -scale-x-100"
+              className="w-1 h-1 absolute opacity-0 pointer-events-none"
             />
-            {/* Blinking recording status indicator overlay */}
-            <div className="absolute top-2 left-1/2 -translate-x-1/2 bg-slate-950/80 backdrop-blur-md px-2 py-0.5 rounded-full text-[8px] font-bold text-teal-400 border border-teal-500/20 flex items-center space-x-1 shadow-md group-hover:opacity-0 transition-opacity duration-200">
-              <span className="h-1.5 w-1.5 rounded-full bg-teal-500 animate-pulse" />
-              <span>PROCTORED</span>
+
+            {/* Sleek, premium visual secure indicator */}
+            <div className="flex flex-col items-center justify-center text-teal-400 space-y-1 z-0">
+              <div className="relative flex items-center justify-center">
+                <div className="absolute inset-0 rounded-full bg-teal-500/10 animate-ping h-8 w-8" />
+                <Shield className="h-7 w-7 text-teal-400 relative z-10 animate-pulse" />
+              </div>
+              <span className="text-[9px] font-mono font-bold tracking-wider uppercase text-teal-400/80">SECURE SESSION</span>
+              {modelLoading ? (
+                <span className="text-[7px] text-slate-500 animate-pulse font-sans">Loading Face AI...</span>
+              ) : (
+                <span className="text-[7px] text-teal-500/70 font-sans flex items-center gap-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                  Face AI Active
+                </span>
+              )}
             </div>
 
             {/* Hover Actions Panel for Developer Simulation */}
@@ -375,11 +587,20 @@ export default function ProctoringMonitor({ assessmentId }: ProctoringMonitorPro
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  handleViolation('simulated_face_absence');
+                  handleViolation('face_not_detected');
                 }}
                 className="w-full bg-red-500/20 hover:bg-red-500/40 border border-red-500/30 text-red-200 text-[9px] py-1 rounded font-medium transition-colors cursor-pointer"
               >
                 Face Absent
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleViolation('multiple_faces_detected');
+                }}
+                className="w-full bg-red-500/20 hover:bg-red-500/40 border border-red-500/30 text-red-200 text-[9px] py-1 rounded font-medium transition-colors cursor-pointer"
+              >
+                Multi Face
               </button>
               <button
                 onClick={(e) => {
@@ -389,6 +610,15 @@ export default function ProctoringMonitor({ assessmentId }: ProctoringMonitorPro
                 className="w-full bg-red-500/20 hover:bg-red-500/40 border border-red-500/30 text-red-200 text-[9px] py-1 rounded font-medium transition-colors cursor-pointer"
               >
                 Cam Blocked
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleViolation('eye_contact_lost');
+                }}
+                className="w-full bg-red-500/20 hover:bg-red-500/40 border border-red-500/30 text-red-200 text-[9px] py-1 rounded font-medium transition-colors cursor-pointer"
+              >
+                Eye Contact Lost
               </button>
             </div>
           </div>
@@ -410,14 +640,20 @@ export default function ProctoringMonitor({ assessmentId }: ProctoringMonitorPro
                   Violation Count: {violationsCount} / 3
                 </p>
               </div>
-              <p className="text-sm text-slate-300 leading-relaxed font-sans">
+
+              <div className="p-3 bg-red-500/5 border border-red-500/15 rounded-lg text-sm text-red-300 leading-normal font-sans">
+                {getViolationDescription(activeViolation)}
+              </div>
+
+              <p className="text-xs text-slate-400 leading-relaxed font-sans">
                 You have exited the secure assessment environment! Leaving the window, switching tabs, exiting fullscreen, low/covered camera, or loud noises are strictly prohibited.
               </p>
+
               <div className="p-3 bg-red-500/5 border border-red-500/15 rounded-lg text-xs text-red-300 leading-normal font-sans">
                 {violationsCount === 1 ? (
-                  <span><strong>Warning:</strong> You have 2 more violations remaining before immediate termination.</span>
+                  <span><strong>Warning:</strong> You have 2 more violations remaining before immediate restart.</span>
                 ) : (
-                  <span><strong>Critical Warning:</strong> The next violation will result in the immediate termination and failure of your assessment session.</span>
+                  <span><strong>Critical Warning:</strong> The next violation will result in the immediate restart of your assessment session.</span>
                 )}
               </div>
               <Button
@@ -477,6 +713,7 @@ export default function ProctoringMonitor({ assessmentId }: ProctoringMonitorPro
           </Card>
         </div>
       )}
+
     </>
   );
 }

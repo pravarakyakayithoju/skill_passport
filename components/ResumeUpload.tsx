@@ -15,7 +15,11 @@ import { Upload, FileText, CheckCircle, Loader2, AlertCircle, Play } from 'lucid
 
 export default function ResumeUpload() {
   const router = useRouter();
-  const { setResumeData, setAssessmentId, setProctoringStream } = useAssessmentStore();
+  const { setResumeData, setAssessmentId, setProctoringStream, reset: resetStore } = useAssessmentStore();
+
+  React.useEffect(() => {
+    resetStore();
+  }, [resetStore]);
 
   const [name, setName] = useState('');
   const [showProctoringSetup, setShowProctoringSetup] = useState(false);
@@ -232,8 +236,7 @@ export default function ResumeUpload() {
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
-              onClick={() => fileInputRef.current?.click()}
-              className={`border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-all duration-300 ${
+              className={`border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-all duration-300 relative overflow-hidden ${
                 isDragOver
                   ? 'border-teal-450 bg-teal-500/10 shadow-[0_0_30px_rgba(20,184,166,0.2)]'
                   : 'border-slate-800 bg-slate-950/60 hover:border-teal-500/35 hover:bg-slate-950/95 hover:shadow-[0_0_25px_rgba(20,184,166,0.08)]'
@@ -244,9 +247,9 @@ export default function ResumeUpload() {
                 ref={fileInputRef}
                 onChange={handleFileChange}
                 accept=".pdf"
-                className="hidden"
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
               />
-              <div className="flex flex-col items-center space-y-4">
+              <div className="flex flex-col items-center space-y-4 relative z-0">
                 <div className="p-4 rounded-full bg-slate-800/80 text-teal-400 border border-slate-700/50">
                   <Upload className="h-8 w-8 animate-pulse" />
                 </div>

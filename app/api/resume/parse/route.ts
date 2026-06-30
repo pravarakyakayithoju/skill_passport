@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
       let rawText = '';
       try {
         const { PDFParse } = await import('pdf-parse');
-        const parser = new PDFParse({ data: buffer });
+        const parser = new PDFParse({ data: new Uint8Array(buffer) });
         const parsedPdf = await parser.getText();
         rawText = parsedPdf.text || '';
       } catch (pdfError) {
@@ -93,7 +93,7 @@ export async function POST(req: NextRequest) {
     let rawText = '';
     try {
       const { PDFParse } = await import('pdf-parse');
-      const parser = new PDFParse({ data: buffer });
+      const parser = new PDFParse({ data: new Uint8Array(buffer) });
       const parsedPdf = await parser.getText();
       rawText = parsedPdf.text || '';
     } catch (pdfError) {
